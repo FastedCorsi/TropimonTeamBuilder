@@ -1,0 +1,13 @@
+{
+  "required": true,
+  "package": "fr.tropimon.teamsaver.mixin.client",
+  "compatibilityLevel": "JAVA_21",
+  "client": [
+    "HeldItemPostMixin",
+    "PokemonRendererMixin",
+    "SoundSystemMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}
