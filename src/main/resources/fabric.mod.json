@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "tropimon_team_saver",
   "version": "${version}",
-  "name": "Tropimon Team Manager",
+  "name": "Tropimon Team Builder",
   "description": "Client-side Cobblemon team builder and manager integrated into the PC interface.",
   "authors": ["Julien"],
   "license": "All-Rights-Reserved",

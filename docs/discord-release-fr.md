@@ -1,4 +1,4 @@
-# Présentation Discord — Tropimon Team Manager 0.38.0
+# Présentation Discord — Tropimon Team Builder 0.38.0
 
 ## Message prêt à publier
 
@@ -29,6 +29,6 @@ Minecraft 1.21.1 • Fabric • Cobblemon 1.7.2
 
 🔗 **Téléchargement et captures**
 
-https://github.com/FastedCorsi/TropimonTeamManager
+https://github.com/FastedCorsi/TropimonTeamBuilder
 
 Vos anciennes teams restent compatibles après la mise à jour depuis Tropimon Team Saver.

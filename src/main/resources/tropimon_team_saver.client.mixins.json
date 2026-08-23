@@ -4,6 +4,7 @@
   "compatibilityLevel": "JAVA_21",
   "client": [
     "HeldItemPostMixin",
+    "PokeBallRendererMixin",
     "PokemonRendererMixin",
     "SoundSystemMixin"
   ],

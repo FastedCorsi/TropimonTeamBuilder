@@ -19,7 +19,9 @@ import java.util.List;
 import java.util.Queue;
 import java.util.Set;
 import java.util.UUID;
+import net.minecraft.client.MinecraftClient;
 import net.minecraft.text.Text;
+import net.minecraft.util.Formatting;
 
 /** Applies saved active/benched move presets after the requested party is in place. */
 final class ClientMoveApplier {
@@ -32,6 +34,8 @@ final class ClientMoveApplier {
     private int waited;
     private String failure;
     private boolean done;
+    private int totalOperations;
+    private int completedOperations;
 
     ClientMoveApplier(PCGUI gui, SavedTeam team) {
         this.gui = gui;
@@ -41,6 +45,7 @@ final class ClientMoveApplier {
     void start() {
         try {
             plan();
+            totalOperations = operations.size();
             if (operations.isEmpty()) done = true;
         } catch (Exception exception) {
             TropimonTeamSaverClient.LOGGER.error("Impossible de préparer les attaques de la team", exception);
@@ -61,6 +66,7 @@ final class ClientMoveApplier {
             return false;
         }
         if (current.isApplied()) {
+            completedOperations++;
             current = null;
             return false;
         }
@@ -70,6 +76,14 @@ final class ClientMoveApplier {
 
     String failure() {
         return failure;
+    }
+
+    int completedOperations() {
+        return completedOperations;
+    }
+
+    int totalOperations() {
+        return totalOperations;
     }
 
     void cancel() {
@@ -90,17 +104,10 @@ final class ClientMoveApplier {
             if (pokemon == null) pokemon = pc.findByUUID(id);
             if (pokemon == null) return message("error_pokemon_missing");
 
-            List<String> active = activeIds(pokemon);
-            if (slot.moveIds.size() != active.size()) {
-                return Text.translatable("screen.tropimon_team_saver.error_move_count",
-                        pokemon.getDisplayName(false), active.size()).getString();
-            }
-            Set<String> accessible = new HashSet<>(active);
-            for (BenchedMove move : pokemon.getBenchedMoves()) accessible.add(move.getMoveTemplate().getName());
             Set<String> unique = new HashSet<>();
             for (String moveId : slot.moveIds) {
                 MoveTemplate template = Moves.getByName(moveId);
-                if (template == null || !accessible.contains(moveId) || !unique.add(moveId)) {
+                if (template == null || !unique.add(moveId)) {
                     String moveName = template == null ? moveId : template.getDisplayName().getString();
                     return Text.translatable("screen.tropimon_team_saver.error_move_unavailable",
                             moveName, pokemon.getDisplayName(false)).getString();
@@ -118,8 +125,14 @@ final class ClientMoveApplier {
             Pokemon pokemon = gui.getParty().get(partySlot);
             if (pokemon == null) continue;
             UUID pokemonId = pokemon.getUuid();
-            List<String> desired = new ArrayList<>(saved.moveIds);
             List<String> simulated = activeIds(pokemon);
+            if (simulated.isEmpty()) continue;
+            Set<String> accessible = new HashSet<>(simulated);
+            for (BenchedMove move : pokemon.getBenchedMoves()) accessible.add(move.getMoveTemplate().getName());
+            TeamMoveReconciler.Result reconciliation = TeamMoveReconciler.reconcile(
+                    saved.moveIds, new ArrayList<>(accessible), simulated, simulated.size());
+            List<String> desired = new ArrayList<>(reconciliation.selected());
+            if (!reconciliation.missing().isEmpty()) notifyMissingMoves(pokemon, reconciliation.missing());
 
             for (String incomingId : desired) {
                 if (simulated.contains(incomingId)) continue;
@@ -173,6 +186,18 @@ final class ClientMoveApplier {
         List<String> result = new ArrayList<>();
         for (Move move : pokemon.getMoveSet().getMoves()) result.add(move.getTemplate().getName());
         return result;
+    }
+
+    private static void notifyMissingMoves(Pokemon pokemon, List<String> missing) {
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client.inGameHud == null || missing.isEmpty()) return;
+        String names = missing.stream().map(moveId -> {
+            MoveTemplate template = Moves.getByName(moveId);
+            return template == null ? moveId : template.getDisplayName().getString();
+        }).reduce((left, right) -> left + ", " + right).orElse("");
+        client.inGameHud.getChatHud().addMessage(Text.translatable(
+                "screen.tropimon_team_saver.chat_missing_moves",
+                pokemon.getDisplayName(false), names).copy().formatted(Formatting.RED));
     }
 
     private static String message(String key) {

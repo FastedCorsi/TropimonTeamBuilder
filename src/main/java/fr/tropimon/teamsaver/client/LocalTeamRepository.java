@@ -68,10 +68,6 @@ final class LocalTeamRepository {
         }
     }
 
-    Path file(MinecraftClient client) {
-        return globalFile(client);
-    }
-
     private PlayerData migrateLegacyData(MinecraftClient client) throws Exception {
         String playerId = client.player.getUuidAsString();
         String currentServerKey = serverKey(client);

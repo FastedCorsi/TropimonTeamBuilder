@@ -4,13 +4,13 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.Locale;
 import java.util.regex.Pattern;
 
 public final class TeamModels {
-    public static final int MAX_TEAMS = 24;
     public static final int MAX_TEAM_SIZE = 6;
     public static final int MAX_MOVES = 4;
     private static final Pattern RESOURCE_ID = Pattern.compile("[a-z0-9_.-]+:[a-z0-9_/.-]+");
@@ -27,9 +27,6 @@ public final class TeamModels {
             if (teams == null) teams = new ArrayList<>();
             if (returnSlots == null) returnSlots = new LinkedHashMap<>();
             teams.removeIf(team -> team == null);
-            if (teams.size() > MAX_TEAMS) {
-                teams = new ArrayList<>(teams.subList(0, MAX_TEAMS));
-            }
             Set<String> teamIds = new HashSet<>();
             for (SavedTeam team : teams) {
                 String canonicalId = canonicalUuid(team.id);
@@ -70,7 +67,11 @@ public final class TeamModels {
                 if (pokemonId != null && !pokemonIds.add(pokemonId)) continue;
                 slot.pokemonId = pokemonId;
                 slot.speciesId = speciesId;
+                slot.formId = canonicalFormId(slot.formId);
                 if (slot.itemId == null || slot.itemId.isBlank()) slot.itemId = "minecraft:air";
+                slot.abilityId = canonicalAbilityId(slot.abilityId);
+                slot.natureId = canonicalToken(slot.natureId, 32);
+                slot.evs = normalizeEvs(slot.evs);
                 if (slot.moveIds == null) slot.moveIds = new ArrayList<>();
                 List<String> normalizedMoves = new ArrayList<>();
                 Set<String> uniqueMoves = new HashSet<>();
@@ -91,9 +92,17 @@ public final class TeamModels {
         public String pokemonId;
         /** Cobblemon species resource id; also identifies unresolved catalogue slots. */
         public String speciesId;
+        /** Planned Cobblemon form name. Null selects the standard form. */
+        public String formId;
         public String itemId;
+        /** Planned Cobblemon ability id. Informational for catalogue slots; never changes server data. */
+        public String abilityId;
         /** Ordered Showdown move ids. Empty keeps legacy behaviour and does not modify moves. */
         public List<String> moveIds = new ArrayList<>();
+        /** Recommended nature; informational because the mod is client-only. */
+        public String natureId;
+        /** Recommended EV spread keyed by hp/atk/def/spa/spd/spe. */
+        public LinkedHashMap<String, Integer> evs = new LinkedHashMap<>();
 
         public SavedSlot() {
         }
@@ -103,10 +112,29 @@ public final class TeamModels {
         }
 
         public SavedSlot(String pokemonId, String speciesId, String itemId, List<String> moveIds) {
+            this(pokemonId, speciesId, itemId, null, moveIds);
+        }
+
+        public SavedSlot(String pokemonId, String speciesId, String itemId, String abilityId, List<String> moveIds) {
+            this(pokemonId, speciesId, null, itemId, abilityId, moveIds);
+        }
+
+        public SavedSlot(String pokemonId, String speciesId, String formId, String itemId,
+                         String abilityId, List<String> moveIds) {
+            this(pokemonId, speciesId, formId, itemId, abilityId, moveIds, null, Map.of());
+        }
+
+        public SavedSlot(String pokemonId, String speciesId, String formId, String itemId,
+                         String abilityId, List<String> moveIds, String natureId,
+                         Map<String, Integer> evs) {
             this.pokemonId = pokemonId;
             this.speciesId = speciesId;
+            this.formId = canonicalFormId(formId);
             this.itemId = itemId == null ? "minecraft:air" : itemId;
+            this.abilityId = canonicalAbilityId(abilityId);
             this.moveIds = moveIds == null ? new ArrayList<>() : new ArrayList<>(moveIds);
+            this.natureId = canonicalToken(natureId, 32);
+            this.evs = normalizeEvs(evs);
         }
 
         public boolean requiresOwnedPokemon() {
@@ -114,15 +142,23 @@ public final class TeamModels {
         }
     }
 
-    public static final class SaveRequest {
-        public String name;
-        public List<SavedSlot> slots = new ArrayList<>();
-    }
-
     public static String cleanName(String value) {
         String cleaned = value == null ? "" : value.strip().replaceAll("[\\p{Cntrl}]", "");
         if (cleaned.length() > 24) cleaned = cleaned.substring(0, 24);
         return cleaned.isBlank() ? "Team" : cleaned;
+    }
+
+    public static String canonicalAbilityId(String value) {
+        if (value == null || value.isBlank()) return null;
+        String normalized = value.strip().toLowerCase(Locale.ROOT).replace(" ", "");
+        return normalized.matches("[a-z0-9_:-]+") ? normalized : null;
+    }
+
+    public static String canonicalFormId(String value) {
+        if (value == null || value.isBlank()) return null;
+        String normalized = value.strip().replaceAll("[\\p{Cntrl}]", "");
+        if (normalized.length() > 48) normalized = normalized.substring(0, 48);
+        return normalized.isBlank() ? null : normalized;
     }
 
     public static String numberedName(String baseName, int number) {
@@ -133,6 +169,13 @@ public final class TeamModels {
         return cleanName(prefix + ending);
     }
 
+    public static int clampEvValue(int currentValue, int currentTotal, int requestedValue) {
+        int current = Math.max(0, Math.min(252, currentValue));
+        int otherStats = Math.max(0, currentTotal - current);
+        int availableForStat = Math.max(0, Math.min(252, 510 - otherStats));
+        return Math.max(0, Math.min(availableForStat, requestedValue));
+    }
+
     public static PlayerData mergeTeamLists(List<PlayerData> sources) {
         PlayerData merged = new PlayerData();
         Set<String> teamIds = new HashSet<>();
@@ -141,7 +184,6 @@ public final class TeamModels {
             if (source == null) continue;
             source.normalize();
             for (SavedTeam team : source.teams) {
-                if (merged.teams.size() >= MAX_TEAMS) return merged;
                 if (teamIds.add(team.id)) merged.teams.add(team);
             }
         }
@@ -167,6 +209,26 @@ public final class TeamModels {
         if (value == null) return null;
         String normalized = value.strip().toLowerCase(Locale.ROOT).replace(" ", "");
         return normalized.matches("[a-z0-9_.-]+") ? normalized : null;
+    }
+
+    private static String canonicalToken(String value, int maximumLength) {
+        if (value == null || value.isBlank()) return null;
+        String normalized = value.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]", "");
+        return normalized.isBlank() || normalized.length() > maximumLength ? null : normalized;
+    }
+
+    private static LinkedHashMap<String, Integer> normalizeEvs(Map<String, Integer> values) {
+        LinkedHashMap<String, Integer> result = new LinkedHashMap<>();
+        if (values == null) return result;
+        for (String stat : List.of("hp", "atk", "def", "spa", "spd", "spe")) {
+            Integer raw = values.get(stat);
+            if (raw == null || raw <= 0) continue;
+            int value = Math.min(252, raw);
+            if (value > 0) {
+                result.put(stat, value);
+            }
+        }
+        return result;
     }
 
     private static boolean isPcSlot(String value) {

@@ -27,9 +27,6 @@ import java.util.UUID;
 import java.util.function.BooleanSupplier;
 import java.util.function.Supplier;
 import net.minecraft.client.MinecraftClient;
-import net.minecraft.item.ItemStack;
-import net.minecraft.registry.Registries;
-import net.minecraft.util.Identifier;
 import net.minecraft.text.Text;
 
 final class ClientTeamApplier {
@@ -56,6 +53,18 @@ final class ClientTeamApplier {
             screen.applyFailed(exception.getMessage());
             return false;
         }
+    }
+
+    static boolean isActive(TeamManagerScreen screen) {
+        return active != null && active.screen == screen;
+    }
+
+    static void cancel(TeamManagerScreen screen) {
+        Job job = active;
+        if (job == null || job.screen != screen) return;
+        if (job.current != null) job.current.cancel.run();
+        active = null;
+        screen.applyCancelled(job.operationStarted);
     }
 
     static boolean requiresPcAccess(PCGUI gui, SavedTeam team) {
@@ -106,24 +115,30 @@ final class ClientTeamApplier {
                         new LocalTeamRepository().save(MinecraftClient.getInstance(), job.data);
                     }
                     job.itemsPlanned = true;
-                    ClientItemApplier itemApplier = new ClientItemApplier(job.pcGui, job.team);
-                    job.operations.add(new Operation(itemApplier::start, itemApplier::tick,
-                            itemApplier::failure, itemApplier::cancel, 1200));
+                    job.itemApplier = new ClientItemApplier(job.pcGui, job.team);
+                    job.operations.add(new Operation(job.itemApplier::start, () -> {
+                        boolean applied = job.itemApplier.tick();
+                        if (applied) job.missingItems = job.itemApplier.missingItems();
+                        return applied;
+                    },
+                            job.itemApplier::failure, job.itemApplier::cancel, 1200, Phase.ITEMS));
                 } else if (!job.movesPlanned) {
                     job.movesPlanned = true;
-                    ClientMoveApplier moveApplier = new ClientMoveApplier(job.pcGui, job.team);
-                    job.operations.add(new Operation(moveApplier::start, moveApplier::tick,
-                            moveApplier::failure, moveApplier::cancel, 1200));
+                    job.moveApplier = new ClientMoveApplier(job.pcGui, job.team);
+                    job.operations.add(new Operation(job.moveApplier::start, job.moveApplier::tick,
+                            job.moveApplier::failure, job.moveApplier::cancel, 1200, Phase.MOVES));
                 } else {
-                    job.screen.applyFinished(job.data, countItemDifferences(job.team, job.pcGui));
+                    job.screen.applyFinished(job.data, job.missingItems);
                     active = null;
                 }
                 return;
             }
             job.operationStarted = true;
+            publishProgress(job, false);
             job.current.send.run();
             return;
         }
+        publishProgress(job, false);
         String operationFailure = job.current.failure.get();
         if (operationFailure != null) {
             job.current.cancel.run();
@@ -132,13 +147,36 @@ final class ClientTeamApplier {
             return;
         }
         if (job.current.applied.getAsBoolean()) {
+            if (job.current.phase == Phase.POKEMON) job.completedPokemonOperations++;
             job.current = null;
             return;
         }
         if (++job.waited > job.current.timeoutTicks) {
+            if (job.current.phase == Phase.POKEMON && job.current.attempts < 2) {
+                job.current.attempts++;
+                job.waited = 0;
+                publishProgress(job, true);
+                job.current.send.run();
+                return;
+            }
             job.current.cancel.run();
             failJob(job, message("error_timeout"));
             active = null;
+        }
+    }
+
+    private static void publishProgress(Job job, boolean retry) {
+        if (job.current == null) return;
+        switch (job.current.phase) {
+            case POKEMON -> job.screen.applyProgress("progress_pokemon",
+                    Math.min(job.totalPokemonOperations, job.completedPokemonOperations + 1),
+                    job.totalPokemonOperations, retry);
+            case ITEMS -> job.screen.applyProgress("progress_items",
+                    job.itemApplier == null ? 0 : job.itemApplier.completedTargets(),
+                    job.itemApplier == null ? job.team.slots.size() : job.itemApplier.totalTargets(), retry);
+            case MOVES -> job.screen.applyProgress("progress_moves",
+                    job.moveApplier == null ? 0 : job.moveApplier.completedOperations(),
+                    job.moveApplier == null ? 0 : job.moveApplier.totalOperations(), retry);
         }
     }
 
@@ -164,7 +202,6 @@ final class ClientTeamApplier {
         if (desired.isEmpty()) throw new PlanException(message("error_empty"));
         String moveError = ClientMoveApplier.validate(team, party, pc);
         if (moveError != null) throw new PlanException(moveError);
-        validateRequiredItems(team, party, pc);
 
         UUID[] simulatedParty = new UUID[6];
         for (int i = 0; i < 6; i++) {
@@ -276,77 +313,6 @@ final class ClientTeamApplier {
         return new Job(screen, gui, team, data, operations, plannedReturnSlots);
     }
 
-    private static int countItemDifferences(SavedTeam team, PCGUI gui) {
-        int differences = 0;
-        for (SavedSlot slot : team.slots) {
-            UUID id;
-            try { id = UUID.fromString(slot.pokemonId); } catch (Exception ignored) { continue; }
-            Pokemon pokemon = gui.getParty().findByUUID(id);
-            String actual = pokemon == null || pokemon.getHeldItem$common().isEmpty() ? "minecraft:air" :
-                    net.minecraft.registry.Registries.ITEM.getId(pokemon.getHeldItem$common().getItem()).toString();
-            String expected = slot.itemId == null ? "minecraft:air" : slot.itemId;
-            if (!actual.equals(expected)) differences++;
-        }
-        return differences;
-    }
-
-    /**
-     * Checks every required held item before moving the party. Only the 36 normal
-     * inventory slots count: armor, offhand and container contents are deliberately
-     * excluded because Cobblemon cannot equip from them through a client-only mod.
-     */
-    private static void validateRequiredItems(SavedTeam team, ClientParty party, ClientPC pc) throws PlanException {
-        MinecraftClient client = MinecraftClient.getInstance();
-        if (client.player == null) throw new PlanException(message("error_item_target"));
-
-        Map<String, Integer> required = new LinkedHashMap<>();
-        for (SavedSlot slot : team.slots) {
-            UUID id = parse(slot.pokemonId);
-            Pokemon pokemon = party.findByUUID(id);
-            if (pokemon == null) pokemon = pc.findByUUID(id);
-            if (pokemon == null) continue;
-
-            String expected = normalizeItem(slot.itemId);
-            if (!expected.equals("minecraft:air") && !itemId(pokemon.getHeldItem$common()).equals(expected)) {
-                required.merge(expected, 1, Integer::sum);
-            }
-        }
-
-        Map<String, Integer> available = new HashMap<>();
-        for (int slot = 0; slot < 36; slot++) {
-            ItemStack stack = client.player.getInventory().getStack(slot);
-            if (!stack.isEmpty()) available.merge(itemId(stack), stack.getCount(), Integer::sum);
-        }
-
-        for (Map.Entry<String, Integer> entry : required.entrySet()) {
-            int found = available.getOrDefault(entry.getKey(), 0);
-            if (found < entry.getValue()) {
-                String name = itemName(entry.getKey());
-                TropimonTeamSaverClient.LOGGER.warn("Objet de team manquant dans l'inventaire: {} ({}/{})",
-                        entry.getKey(), found, entry.getValue());
-                throw new PlanException(Text.translatable(
-                        "screen.tropimon_team_saver.error_item_missing_count",
-                        name, found, entry.getValue()).getString());
-            }
-        }
-    }
-
-    private static String itemId(ItemStack stack) {
-        return stack == null || stack.isEmpty()
-                ? "minecraft:air"
-                : Registries.ITEM.getId(stack.getItem()).toString();
-    }
-
-    private static String normalizeItem(String raw) {
-        return raw == null || raw.isBlank() ? "minecraft:air" : raw;
-    }
-
-    private static String itemName(String raw) {
-        Identifier id = Identifier.tryParse(raw);
-        if (id == null || !Registries.ITEM.containsId(id)) return raw;
-        return new ItemStack(Registries.ITEM.get(id)).getName().getString();
-    }
-
     private static boolean hasParty(ClientParty party, int slot, UUID id) {
         Pokemon pokemon = party.get(slot);
         return pokemon != null && pokemon.getUuid().equals(id);
@@ -405,19 +371,26 @@ final class ClientTeamApplier {
         final Supplier<String> failure;
         final Runnable cancel;
         final int timeoutTicks;
+        final Phase phase;
+        int attempts;
 
         Operation(Runnable send, BooleanSupplier applied) {
-            this(send, applied, () -> null, () -> {}, TIMEOUT_TICKS);
+            this(send, applied, () -> null, () -> {}, TIMEOUT_TICKS, Phase.POKEMON);
         }
 
         Operation(Runnable send, BooleanSupplier applied, Supplier<String> failure,
-                  Runnable cancel, int timeoutTicks) {
+                  Runnable cancel, int timeoutTicks, Phase phase) {
             this.send = send;
             this.applied = applied;
             this.failure = failure;
             this.cancel = cancel;
             this.timeoutTicks = timeoutTicks;
+            this.phase = phase;
         }
+    }
+
+    private enum Phase {
+        POKEMON, ITEMS, MOVES
     }
 
     private static final class Job {
@@ -429,10 +402,15 @@ final class ClientTeamApplier {
         final Map<String, String> plannedReturnSlots;
         Operation current;
         int waited;
+        int missingItems;
         boolean itemsPlanned;
         boolean movesPlanned;
         boolean positionsCommitted;
         boolean operationStarted;
+        final int totalPokemonOperations;
+        int completedPokemonOperations;
+        ClientItemApplier itemApplier;
+        ClientMoveApplier moveApplier;
 
         Job(TeamManagerScreen screen, PCGUI pcGui, SavedTeam team, PlayerData data,
             Queue<Operation> operations, Map<String, String> plannedReturnSlots) {
@@ -441,11 +419,14 @@ final class ClientTeamApplier {
             this.team = team;
             this.data = data;
             this.operations = operations;
+            this.totalPokemonOperations = operations.size();
             this.plannedReturnSlots = plannedReturnSlots;
         }
     }
 
     private static final class PlanException extends Exception {
+        private static final long serialVersionUID = 1L;
+
         PlanException(String message) { super(message); }
     }
 }

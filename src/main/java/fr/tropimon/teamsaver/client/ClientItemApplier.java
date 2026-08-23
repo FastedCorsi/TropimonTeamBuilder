@@ -18,13 +18,14 @@ import net.minecraft.text.Text;
 
 /** Applies saved held items using only interactions understood by a standard Cobblemon server. */
 final class ClientItemApplier {
-    private static final int MIN_INTERACTION_AGE_TICKS = 6;
+    private static final int MIN_RECALL_AGE_TICKS = 3;
+    private static final int RECALL_RETRY_TICKS = 10;
     private final MinecraftClient client = MinecraftClient.getInstance();
     private final PCGUI gui;
     private final SavedTeam team;
     private int targetSlot;
     private int originalSelectedSlot;
-    private State state = State.START;
+    private State state = State.NEXT_TARGET;
     private String expectedItem = "minecraft:air";
     private Pokemon target;
     private Pokemon actor;
@@ -35,8 +36,9 @@ final class ClientItemApplier {
     private final Set<Integer> automatedPartySlots = new HashSet<>();
     private final Set<Integer> recallRequestedSlots = new HashSet<>();
     private boolean recallRequested;
+    private int recallWaitTicks;
     private int offeredCount;
-    private int syncTicks;
+    private int missingItems;
     private String failure;
 
     ClientItemApplier(PCGUI gui, SavedTeam team) {
@@ -50,7 +52,6 @@ final class ClientItemApplier {
             return;
         }
         originalSelectedSlot = client.player.getInventory().selectedSlot;
-        preSendChangedPokemon();
         state = State.NEXT_TARGET;
     }
 
@@ -78,14 +79,15 @@ final class ClientItemApplier {
             }
             case WAIT_TAKEN -> {
                 if (actor != null && actor.getHeldItem$common().isEmpty()) {
-                    if (++syncTicks >= 2) finishTake();
-                } else syncTicks = 0;
+                    finishTake();
+                }
             }
             case WAIT_TAKE_RECALL -> {
                 if (actor == null || actor.getEntity() == null) {
                     automatedPartySlots.remove(actorPartySlot);
                     recallRequestedSlots.remove(actorPartySlot);
                     recallRequested = false;
+                    recallWaitTicks = 0;
                     clearHiddenPokemon(actor);
                     completeTake();
                 } else {
@@ -101,21 +103,33 @@ final class ClientItemApplier {
             case WAIT_GIVEN -> {
                 if (target != null && itemId(target.getHeldItem$common()).equals(expectedItem)
                         && handTransferConfirmed()) {
-                    if (++syncTicks >= 2) finishGive();
-                } else syncTicks = 0;
+                    finishGive();
+                }
             }
             case WAIT_GIVE_RECALL -> {
                 if (target == null || target.getEntity() == null) {
                     automatedPartySlots.remove(targetSlot);
                     recallRequestedSlots.remove(targetSlot);
                     recallRequested = false;
+                    recallWaitTicks = 0;
                     clearHiddenPokemon(target);
                     completeTarget();
                 } else {
                     requestRecallWhenReady(targetSlot, target);
                 }
             }
-            default -> {
+            case WAIT_SKIP_RECALL -> {
+                if (target == null || target.getEntity() == null) {
+                    automatedPartySlots.remove(targetSlot);
+                    recallRequestedSlots.remove(targetSlot);
+                    recallRequested = false;
+                    recallWaitTicks = 0;
+                    clearHiddenPokemon(target);
+                    completeTarget();
+                } else {
+                    hideAutomatedEntity(target);
+                    requestRecallWhenReady(targetSlot, target);
+                }
             }
         }
         return state == State.DONE;
@@ -123,6 +137,18 @@ final class ClientItemApplier {
 
     String failure() {
         return failure;
+    }
+
+    int missingItems() {
+        return missingItems;
+    }
+
+    int completedTargets() {
+        return Math.min(targetSlot, team.slots.size());
+    }
+
+    int totalTargets() {
+        return team.slots.size();
     }
 
     void cancel() {
@@ -176,7 +202,7 @@ final class ClientItemApplier {
             prepareItemInHand(inventorySlot);
             return;
         }
-        failMissingItem();
+        skipMissingItem();
     }
 
     private void beginTake(Pokemon pokemon, int partySlot) {
@@ -202,7 +228,6 @@ final class ClientItemApplier {
         if (actor == null || actor.getEntity() == null || !client.player.getMainHandStack().isEmpty()) return;
         if (actorWasSent) hideAutomatedEntity(actor);
         new InteractPokemonPacket(actor.getEntity().getUuid(), InteractTypePokemon.HELD_ITEM).sendToServer();
-        syncTicks = 0;
         state = State.WAIT_TAKEN;
     }
 
@@ -253,7 +278,6 @@ final class ClientItemApplier {
                 || !itemId(client.player.getMainHandStack()).equals(expectedItem)) return;
         if (actorWasSent) hideAutomatedEntity(target);
         new InteractPokemonPacket(target.getEntity().getUuid(), InteractTypePokemon.HELD_ITEM).sendToServer();
-        syncTicks = 0;
         state = State.WAIT_GIVEN;
     }
 
@@ -360,17 +384,17 @@ final class ClientItemApplier {
         failure = Text.translatable("screen.tropimon_team_saver." + key).getString();
     }
 
-    private void failMissingItem() {
-        recallAutomatedPokemonIfNeeded();
-        clearHiddenEntity();
-        restoreSelection();
-        String name = expectedItem;
-        net.minecraft.util.Identifier id = net.minecraft.util.Identifier.tryParse(expectedItem);
-        if (id != null && Registries.ITEM.containsId(id)) {
-            name = new ItemStack(Registries.ITEM.get(id)).getName().getString();
-        }
+    private void skipMissingItem() {
+        missingItems++;
         TropimonTeamSaverClient.LOGGER.warn("Objet de team introuvable pendant l'application: {}", expectedItem);
-        failure = Text.translatable("screen.tropimon_team_saver.error_item_missing_count", name, 0, 1).getString();
+        restoreHandSwap();
+        if (automatedPartySlots.contains(targetSlot)) {
+            recallRequested = false;
+            recallWaitTicks = 0;
+            state = State.WAIT_SKIP_RECALL;
+        } else {
+            completeTarget();
+        }
     }
 
     private void hideAutomatedEntity(Pokemon pokemon) {
@@ -384,17 +408,22 @@ final class ClientItemApplier {
         if (pokemon == null) return;
         automatedPartySlots.add(partySlot);
         recallRequested = false;
+        recallWaitTicks = 0;
         UUID pokemonId = pokemon.getUuid();
         hiddenPokemonIds.add(pokemonId);
         AutomationVisibility.hide(pokemonId);
     }
 
     private void requestRecallWhenReady(int partySlot, Pokemon pokemon) {
-        if (recallRequested || pokemon == null || pokemon.getEntity() == null
-                || pokemon.getEntity().getTicksLived() < MIN_INTERACTION_AGE_TICKS
-                || pokemon.getEntity().isBusy()) return;
+        if (pokemon == null || pokemon.getEntity() == null || pokemon.getEntity().isBusy()) return;
+        if (recallRequested) {
+            if (++recallWaitTicks < RECALL_RETRY_TICKS) return;
+        } else if (pokemon.getEntity().getTicksLived() < MIN_RECALL_AGE_TICKS) {
+            return;
+        }
         new SendOutPokemonPacket(partySlot).sendToServer();
         recallRequested = true;
+        recallWaitTicks = 0;
         recallRequestedSlots.add(partySlot);
         TropimonTeamSaverClient.LOGGER.debug("Rappel automatique demandé pour le slot {}", partySlot);
     }
@@ -403,6 +432,8 @@ final class ClientItemApplier {
         if (client.player == null) return;
         for (int partySlot : Set.copyOf(automatedPartySlots)) {
             if (recallRequestedSlots.contains(partySlot)) continue;
+            Pokemon pokemon = gui.getParty().get(partySlot);
+            if (pokemon == null || pokemon.getEntity() == null) continue;
             new SendOutPokemonPacket(partySlot).sendToServer();
             recallRequestedSlots.add(partySlot);
         }
@@ -424,7 +455,6 @@ final class ClientItemApplier {
 
     private boolean readyForItemInteraction(Pokemon pokemon) {
         return pokemon != null && pokemon.getEntity() != null
-                && pokemon.getEntity().getTicksLived() >= MIN_INTERACTION_AGE_TICKS
                 && !pokemon.getEntity().isBusy();
     }
 
@@ -437,24 +467,6 @@ final class ClientItemApplier {
         return -1;
     }
 
-    private void preSendChangedPokemon() {
-        for (int slot = 0; slot < Math.min(6, team.slots.size()); slot++) {
-            SavedSlot saved = team.slots.get(slot);
-            Pokemon pokemon = gui.getParty().get(slot);
-            if (pokemon == null || pokemon.getEntity() != null
-                    || itemId(pokemon.getHeldItem$common()).equals(normalize(saved.itemId))) continue;
-            UUID expectedPokemon;
-            try {
-                expectedPokemon = UUID.fromString(saved.pokemonId);
-            } catch (Exception ignored) {
-                continue;
-            }
-            if (!pokemon.getUuid().equals(expectedPokemon)) continue;
-            prepareAutomatedSendout(pokemon, slot);
-            new SendOutPokemonPacket(slot).sendToServer();
-        }
-    }
-
     private static String itemId(ItemStack stack) {
         return stack == null || stack.isEmpty() ? "minecraft:air" : Registries.ITEM.getId(stack.getItem()).toString();
     }
@@ -464,9 +476,9 @@ final class ClientItemApplier {
     }
 
     private enum State {
-        START, NEXT_TARGET, ACQUIRE_ITEM, WAIT_EMPTY_HAND, WAIT_ITEM_HAND,
+        NEXT_TARGET, ACQUIRE_ITEM, WAIT_EMPTY_HAND, WAIT_ITEM_HAND,
         WAIT_ACTOR_ACTIVE, WAIT_TAKEN, WAIT_TAKE_RECALL,
-        WAIT_TARGET_ACTIVE, WAIT_GIVEN, WAIT_GIVE_RECALL, DONE
+        WAIT_TARGET_ACTIVE, WAIT_GIVEN, WAIT_GIVE_RECALL, WAIT_SKIP_RECALL, DONE
     }
 
     private record HandSwap(int inventorySlot, int hotbarSlot) {}

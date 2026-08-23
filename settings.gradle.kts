@@ -14,4 +14,4 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "TropimonTeamManager"
+rootProject.name = "TropimonTeamBuilder"

@@ -10,6 +10,10 @@ base {
     archivesName.set(property("archives_base_name") as String)
 }
 
+repositories {
+    maven("https://api.modrinth.com/maven")
+}
+
 val launcherMods = file("${System.getProperty("user.home")}/AppData/Roaming/.tropimon/mods")
 val localCobblemon = file("$launcherMods/Cobblemon-fabric-1.7.2+1.21.1.jar")
 val localKotlinCandidates = fileTree(launcherMods) {
@@ -43,6 +47,7 @@ java {
 tasks.withType<JavaCompile>().configureEach {
     options.encoding = "UTF-8"
     options.release.set(21)
+    options.compilerArgs.add("-Xlint:all")
 }
 
 tasks.test {
@@ -50,24 +55,9 @@ tasks.test {
 }
 
 tasks.processResources {
-    inputs.property("version", project.version)
+    val modVersion = project.version.toString()
+    inputs.property("version", modVersion)
     filesMatching("fabric.mod.json") {
-        expand("version" to project.version)
+        expand("version" to modVersion)
     }
-}
-
-tasks.register<Copy>("installTropimonLocal") {
-    dependsOn(tasks.remapJar)
-    val tropimonMods = file("${System.getProperty("user.home")}/AppData/Roaming/.tropimon/mods")
-    doFirst {
-        delete(fileTree(tropimonMods) {
-            include("TropimonTeamSaver-*.jar")
-            include("TropimonTeamSaver-*.jar.pending")
-            include("TropimonTeamManager-*.jar")
-            include("TropimonTeamManager-*.jar.pending")
-        })
-    }
-    from(tasks.remapJar.flatMap { it.archiveFile })
-    into(tropimonMods)
-    rename { "TropimonTeamManager-${project.version}+1.21.1-LOCAL.jar" }
 }

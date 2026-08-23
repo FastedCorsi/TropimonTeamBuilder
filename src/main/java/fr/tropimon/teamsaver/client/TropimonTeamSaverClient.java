@@ -77,11 +77,10 @@ public final class TropimonTeamSaverClient implements ClientModInitializer {
                 }
             }
         });
-        LOGGER.info("Tropimon Team Manager client-only initialized");
+        LOGGER.info("Tropimon Team Builder client-only initialized");
     }
 
     static boolean requestRemotePcForApply(String teamId) {
-        MinecraftClient client = MinecraftClient.getInstance();
         return requestRemotePc(teamId);
     }
 

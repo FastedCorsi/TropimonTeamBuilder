@@ -12,6 +12,7 @@ import fr.tropimon.teamsaver.model.TeamModels.SavedSlot;
 import fr.tropimon.teamsaver.model.TeamModels.SavedTeam;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
@@ -28,9 +29,18 @@ final class TeamModelsTest {
     }
 
     @Test
-    void corruptedOrOversizedDataIsNormalized() {
+    void evInputIsClampedPerStatAndAgainstTheTeamTotal() {
+        assertEquals(252, TeamModels.clampEvValue(0, 0, 999));
+        assertEquals(6, TeamModels.clampEvValue(0, 504, 252));
+        assertEquals(252, TeamModels.clampEvValue(252, 510, 252));
+        assertEquals(0, TeamModels.clampEvValue(0, 0, -12));
+    }
+
+    @Test
+    void corruptedDataIsNormalizedWithoutTruncatingTeams() {
         PlayerData data = new PlayerData();
-        for (int teamIndex = 0; teamIndex < 30; teamIndex++) {
+        int teamCount = 120;
+        for (int teamIndex = 0; teamIndex < teamCount; teamIndex++) {
             SavedTeam team = new SavedTeam();
             team.id = UUID.randomUUID().toString();
             team.name = "Equipe " + teamIndex;
@@ -44,7 +54,7 @@ final class TeamModelsTest {
         data = TeamJson.GSON.fromJson(TeamJson.GSON.toJson(data), PlayerData.class);
         data.normalize();
 
-        assertEquals(TeamModels.MAX_TEAMS, data.teams.size());
+        assertEquals(teamCount, data.teams.size());
         assertEquals(TeamModels.MAX_TEAM_SIZE, data.teams.getFirst().slots.size());
     }
 
@@ -120,13 +130,29 @@ final class TeamModelsTest {
     }
 
     @Test
+    void interserverMigrationKeepsMoreThanTheLegacyTeamLimit() {
+        PlayerData firstServer = new PlayerData();
+        PlayerData secondServer = new PlayerData();
+        for (int index = 0; index < 70; index++) {
+            firstServer.teams.add(team(UUID.randomUUID().toString(), "First " + index));
+            secondServer.teams.add(team(UUID.randomUUID().toString(), "Second " + index));
+        }
+
+        PlayerData merged = TeamModels.mergeTeamLists(List.of(firstServer, secondServer));
+
+        assertEquals(140, merged.teams.size());
+    }
+
+    @Test
     void cataloguePlaceholderAndMovePresetSurviveNormalization() {
         PlayerData data = new PlayerData();
         SavedTeam team = new SavedTeam();
         team.id = UUID.randomUUID().toString();
         team.name = "Draft";
-        SavedSlot placeholder = new SavedSlot(null, "cobblemon:dragonite", "minecraft:air",
-                List.of("thunderpunch", "roost", "roost", "bad:move", "hurricane", "extremespeed"));
+        SavedSlot placeholder = new SavedSlot(null, "cobblemon:dragonite", "Mega-X",
+                "minecraft:air", "Multi Scale",
+                List.of("thunderpunch", "roost", "roost", "bad:move", "hurricane", "extremespeed"),
+                "Jolly", Map.of("hp", 4, "atk", 252, "spe", 252, "bad", 99));
         team.slots.add(placeholder);
         data.teams.add(team);
 
@@ -136,8 +162,20 @@ final class TeamModelsTest {
         SavedSlot restored = data.teams.getFirst().slots.getFirst();
         assertNull(restored.pokemonId);
         assertEquals("cobblemon:dragonite", restored.speciesId);
+        assertEquals("Mega-X", restored.formId);
+        assertEquals("multiscale", restored.abilityId);
+        assertEquals("jolly", restored.natureId);
+        assertEquals(Map.of("hp", 4, "atk", 252, "spe", 252), restored.evs);
         assertTrue(restored.requiresOwnedPokemon());
         assertEquals(List.of("thunderpunch", "roost", "hurricane", "extremespeed"), restored.moveIds);
+    }
+
+    @Test
+    void preservesAnInvalidEvTotalSoPreflightCanReportIt() {
+        SavedSlot slot = new SavedSlot(null, "cobblemon:dragonite", null, "minecraft:air",
+                null, List.of(), null, Map.of("hp", 252, "atk", 252, "spe", 252));
+
+        assertEquals(756, slot.evs.values().stream().mapToInt(Integer::intValue).sum());
     }
 
     private SavedTeam team(String id, String name) {
