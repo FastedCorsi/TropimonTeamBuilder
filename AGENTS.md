@@ -1,0 +1,62 @@
+# Confidentialité permanente des mods Tropimon
+
+Cette règle demandée par l'utilisateur s'applique à toute création, correction, optimisation, compilation et livraison des mods Tropimon de ce dépôt, y compris leurs futurs modules.
+
+## Attribution et données du développeur
+
+- La mention d'auteur publique du développeur est exactement « By FastedCorsi ». Dans fabric.mod.json, utiliser `"authors": ["By FastedCorsi"]` pour son attribution ; conserver les crédits et licences des autres auteurs.
+- Ne jamais ajouter de prénom, nom civil, adresse personnelle ou professionnelle, employeur, nom de compte système ou chemin absolu personnel du développeur dans le code, les ressources, scripts, tests, exemples, documentation, messages de commit ou artefacts destinés à être partagés.
+- Ne pas recopier ces données dans ce fichier de consignes, une liste de détection versionnée ou un rapport destiné à la publication. Les éventuels relevés confidentiels restent hors des dépôts et masquent les valeurs sensibles.
+- Utiliser des chemins portables et des données fictives neutres. Examiner chaque occurrence avant de la modifier : préserver les identifiants techniques, données de joueurs nécessaires au fonctionnement, dépendances, licences et crédits tiers.
+- Conserver les URLs et clés explicitement publiques nécessaires au fonctionnement. Ne jamais embarquer de secret, jeton personnel ou configuration réelle de session ; ne pas considérer l'obfuscation comme une protection.
+
+## Contrôle avant livraison
+
+- Pour chaque changement livré, contrôler les fichiers modifiés et le contenu des nouveaux artefacts : métadonnées auteur/contact, constantes compilées, ressources et archives imbriquées, chemins personnels et secrets.
+- Vérifier les JAR finaux après compilation, pas seulement les sources. Exclure des paquets les configurations personnelles, logs, captures personnelles, sauvegardes, fichiers .env et dossiers .git.
+- Lors du premier nettoyage d'un module, examiner tout son contenu destiné à être publié ; après cela, prévenir les réintroductions. Installer ou conserver un contrôle automatisé dans le build/CI quand la tâche porte sur ce nettoyage ou sa prévention ; ne pas y inscrire de données personnelles réelles.
+- Si le contrôle détecte des données personnelles ou un secret, corriger avant de déclarer l'artefact prêt à diffuser. Ne pas supprimer les originaux personnels sur disque pour nettoyer une distribution.
+- Signaler les éléments non vérifiés et les risques résiduels ; ne pas promettre une anonymisation absolue ou l'effacement de copies déjà récupérées.
+
+## Git et périmètre des actions
+
+- Avant tout nouveau commit autorisé, vérifier l'identité d'auteur et de committer effective : pseudonyme FastedCorsi et adresse GitHub noreply valide déjà vérifiée. Ne pas inventer d'adresse ; si aucune adresse valide n'est disponible, terminer le travail local sans créer le commit concerné et signaler le point.
+- Ne pas modifier la configuration Git globale. Signaler séparément les données restant dans l'historique, les releases ou les copies déjà distribuées ; changer un fichier ou ajouter .gitignore ne les efface pas.
+- Ne pas réécrire l'historique, pousser de force, publier, remplacer un JAR du launcher ou révoquer une clé sans autorisation correspondante. Ne jamais tester un secret contre un service pour vérifier sa validité dans le cadre de ce nettoyage.
+- Préserver la logique, les fonctionnalités et l'indépendance de chaque mod. Une dépendance à un autre mod développé par nous doit être remplacée par un équivalent autonome lorsqu'elle est concernée par la tâche, sans retirer une protection nécessaire.
+- Ajouter cette règle sans données personnelles dans tout nouveau dépôt autonome de mod Tropimon. Team Hunt et Bid Maker restent mis de côté tant que l'utilisateur ne demande pas leur reprise.
+
+## Contrôle spécifique au Team Builder
+
+- Exécuter `privacyCheckSources` et `privacyCheckArtifacts` avant chaque livraison ; `build` les inclut. Le contrôle des archives inclut leurs constantes compilées et archives imbriquées.
+- Les termes privés supplémentaires ne doivent être fournis que par la variable d'environnement locale ou secrète CI `TROPIMON_PRIVACY_TERMS`, séparés par des points-virgules ou retours à la ligne. Ne jamais les enregistrer dans le dépôt ni les afficher dans un rapport.
+- Ne pas contourner une détection en déplaçant, encodant ou obfusquant une valeur. Examiner la provenance ; préserver les références fonctionnelles publiques et les crédits tiers.
+- Ne pas réintégrer les captures personnelles locales ignorées dans la documentation ou une archive. Ne livrer que les JAR de la version courante ayant passé le contrôle.
+
+## Deux livraisons JAR à chaque version
+
+- À chaque livraison d'une version ou d'un changement de code, fournir deux JAR clairement séparés : un JAR local accompagné du système de mise à jour différée de l'instance du launcher, et un JAR prêt à partager. Utiliser deux dossiers ou noms explicites ; ne jamais installer les deux exemplaires simultanément.
+- Les deux JAR proviennent de la même version validée et offrent les mêmes fonctionnalités. Ils peuvent être identiques octet pour octet : privilégier un petit script externe pour l'installation locale, sans dupliquer le code du mod ni embarquer ce mécanisme dans le JAR public.
+- Le launcher peut rester ouvert : seul le jeu Minecraft concerné bloque la mise à jour locale. Attendre l'arrêt du jeu avant de remplacer le JAR dans la bonne instance ; la fermeture du launcher n'est pas requise et ne prouve pas l'arrêt du jeu. Ne jamais forcer leur arrêt, toucher aux autres mods ni remplacer un fichier utilisé ou verrouillé.
+- Cette demande constitue l'autorisation permanente de préparer et d'armer cette installation différée lors d'une livraison, sauf consigne explicite contraire pour la tâche. Une demande de conseil, d'audit ou de mise à jour des règles ne déclenche ni compilation ni installation.
+- Réutiliser et adapter les outils locaux existants. Vérifier la cible exacte, l'intégrité du JAR et le résultat de la copie ; conserver une sauvegarde de l'ancien JAR hors du dossier des mods chargés. En cas de cible ambiguë, d'accès impossible ou de verrouillage, conserver le fichier préparé et signaler le blocage sans forcer.
+- Le JAR partageable ne contient ni chemin personnel, configuration locale, secret, donnée privée ni outil d'installation spécifique à la machine. Appliquer les contrôles de confidentialité aux deux JAR et aux éventuels fichiers qui les accompagnent. Conserver l'attribution « By FastedCorsi » et les crédits tiers.
+- Dans la livraison, indiquer les deux JAR et leur version, les contrôles effectués et l'état réel de l'installation locale : préparée, en attente de fermeture ou installée après vérification. Ne pas annoncer une installation réussie parce qu'un script a seulement été lancé.
+
+## Code simple, lisible et efficace
+
+- Préserver strictement la logique, les fonctionnalités et les protections. Chercher les gains utiles de performance, mémoire et poids sans rendre le code difficile à comprendre.
+- Choisir la solution la plus simple qui répond au besoin actuel. Éviter les classes, interfaces, factories, couches de services, méthodes relais et dépendances ajoutées sans utilité concrète ; ne pas bâtir un framework pour un cas isolé.
+- Garder des classes cohérentes et des méthodes lisibles quand leur séparation aide réellement. Ne pas tout fusionner dans une classe géante ni compacter le code : moins de fichiers ou de lignes ne garantit pas de meilleures performances.
+- Réutiliser ce qui existe dans le mod ; supprimer le code mort seulement après vérification des usages, y compris mixins, réflexion, événements, ressources et compatibilité. Pas de réécriture générale pour une optimisation locale.
+- Cibler les coûts identifiés : travail répété par tick ou par frame, scans, allocations, entrées/sorties et caches sans limite. Justifier les gains et vérifier les comportements concernés ; ne pas ajouter de cache, de thread ou d'abstraction préventive sans besoin démontré.
+- Chaque mod reste autonome : aucune dépendance aux classes, états ou services internes de nos autres mods. Recréer dans le mod concerné la petite implémentation nécessaire plutôt qu'imposer une bibliothèque commune ; préserver les dépendances officielles nécessaires.
+
+## Publication et mise à jour autonome
+
+- Chaque version livrée est poussée sur le dépôt GitHub public propre à ce mod, puis publiée dans une Release dont le tag correspond exactement à la version.
+- La Release contient un seul JAR partageable vérifié et son fichier SHA-256. Les JAR LOCAL, configurations et scripts propres à une machine ne sont jamais publiés.
+- Ce mod embarque sa propre implémentation de mise à jour. Elle ne dépend d'aucune classe, bibliothèque ou service interne d'un autre mod Tropimon.
+- La mise à jour accepte uniquement la Release officielle de ce dépôt, exige le SHA-256, vérifie l'identifiant et la version de fabric.mod.json, prépare le fichier hors du dossier mods, puis remplace l'ancien JAR seulement après l'arrêt de Minecraft. Elle ne force jamais l'arrêt du jeu ou du launcher et conserve une sauvegarde hors des mods chargés.
+- Une évolution de l'updater doit rester légère, asynchrone et sans travail répété par tick ou par frame.
+

@@ -1,5 +1,51 @@
 # Changelog
 
+## 0.59.10
+
+- Dans l'aperçu d'une équipe, un double-clic sur un Pokémon ouvre directement son remplacement ; le clic simple conserve le panneau d'informations.
+- Les Pokémon peuvent être glissés entre les six slots, depuis l'aperçu ou l'éditeur, afin de choisir librement les positions de départ en simple, double ou triple.
+- Le déplacement depuis l'aperçu est sauvegardé au dépôt et peut être annulé. Les sets complets restent attachés à leur Pokémon.
+- Remplacer un Pokémon par un meilleur exemplaire de la même espèce et forme conserve le preset prévu ; les incompatibilités de talent, nature, EV ou attaques continuent d'être contrôlées et signalées.
+
+## 0.59.9
+
+- Correction d’un écrasement silencieux des presets : ouvrir Modifier ne remplace plus les attaques, le talent, la nature ou les EV sauvegardés par les valeurs actuelles du Pokémon associé.
+- Lors d’une association, les valeurs explicitement prévues restent prioritaires. Les valeurs actuelles ne sont reprises que pour les champs encore non définis.
+- À l’équipement, une attaque prévue mais non apprise continue d’être remplacée temporairement par une attaque accessible, avec l’avertissement existant ; le preset sauvegardé reste intact.
+
+## 0.59.8
+
+- En mode Réorganiser, clic maintenu + molette change immédiatement de page, sans devoir déplacer la souris au préalable.
+- L’équipe reste accrochée au curseur ; l’ordre n’est sauvegardé qu’au dépôt. Les annulations et limites de page sont conservées.
+
+## 0.59.7
+
+- Import paste et Réorganiser déplacés à droite, au-dessus des actions de sauvegarde/suppression.
+- Réorganisation par glisser-déposer avec aperçu sous le curseur, repère d’insertion et sauvegarde au dépôt.
+- Huit équipes visibles par page ; changement de page pendant le glissement par molette ou maintien au bord de la liste.
+- Dépôt hors liste, clic droit ou Échap : annulation sans modifier l’ordre. Les sets et automatismes d’équipement restent inchangés.
+
+## 0.59.6
+
+- Bouton Réorganiser dans Mes teams : sélectionner une équipe, la monter ou la descendre, puis Terminé (ou Échap).
+- Ordre enregistré automatiquement et conservé après redémarrage ; la sélection suit les déplacements entre pages.
+- Six équipes par page pour garder les commandes dans le cadre. Les Pokémon, sets et automatismes d’équipement ne changent pas.
+
+## 0.59.5
+
+- Attribution publique uniformisée : By FastedCorsi.
+- Captures personnelles retirées de la distribution, sans suppression des originaux locaux.
+- Contrôle de confidentialité des sources et des archives finales intégré au build et à la CI.
+- Aucune modification de la logique du mod, de sa génération ni de ses automatismes.
+
+## 0.59.4
+
+- Mise en cache du Team Doctor, des validations d'affichage et des données des listes ; invalidation sur les changements de sets, stockage, Pokémon, catalogue, langue et inventaire concernés.
+- Réutilisation des modèles visibles sans réinitialiser leur animation quand leur identité visuelle n'a pas changé.
+- Suppression du scan des ressources privées des autres mods : compléments de learnsets intégrés au Team Builder, avec vérification d'équivalence.
+- Import de texte Showdown et de liens Poképaste vers un brouillon, avec contrôles et avertissement pour les champs non gérés.
+- Génération, recommandations, prévalidations d'application, ordre des paquets et temporisations de transfert inchangés.
+
 ## 0.59.3
 
 - Dans le sélecteur d'attaques, chaque groupe est maintenant trié par taux d'utilisation Ranked décroissant pour la saison sélectionnée.

@@ -6,6 +6,8 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import java.io.IOException;
 import java.io.Reader;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
@@ -16,7 +18,6 @@ import java.util.Map;
 import java.util.Set;
 import java.util.stream.Stream;
 import net.fabricmc.loader.api.FabricLoader;
-import net.fabricmc.loader.api.ModContainer;
 import net.minecraft.util.Identifier;
 
 /**
@@ -31,8 +32,20 @@ final class LocalCobblemonLearnsetIndex {
 
     static LocalCobblemonLearnsetIndex build() {
         LocalCobblemonLearnsetIndex index = new LocalCobblemonLearnsetIndex();
-        for (ModContainer mod : FabricLoader.getInstance().getAllMods()) {
+        // Only the official dependency. Compatibility learnsets belong to this mod,
+        // so installing/removing another Tropimon mod cannot change our local catalogue.
+        FabricLoader.getInstance().getModContainer("cobblemon").ifPresent(mod -> {
             for (Path root : mod.getRootPaths()) index.scanRoot(root);
+        });
+        try (var stream = LocalCobblemonLearnsetIndex.class.getResourceAsStream(
+                "/assets/tropimon_team_saver/data/learnset_supplements.json")) {
+            if (stream == null) throw new IOException("Missing bundled learnset supplements");
+            try (Reader reader = new InputStreamReader(stream, StandardCharsets.UTF_8)) {
+                JsonObject documents = JsonParser.parseReader(reader).getAsJsonObject();
+                documents.entrySet().forEach(entry -> index.addDocument(entry.getKey(), entry.getValue().getAsJsonObject()));
+            }
+        } catch (IOException exception) {
+            throw new IllegalStateException("Cannot read Team Builder learnsets", exception);
         }
         return index;
     }

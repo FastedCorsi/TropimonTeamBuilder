@@ -1,0 +1,323 @@
+{
+  "cobblemon:calyrex": {
+    "forms": [
+      {
+        "name": "Ice",
+        "moves": [
+          "40:grassyterrain",
+          "form_change:glaciallance",
+          "tm:round",
+          "tm:snore",
+          "tm:uproar",
+          "tutor:glaciallance"
+        ]
+      },
+      {
+        "name": "Shadow",
+        "moves": [
+          "40:grassyterrain",
+          "form_change:astralbarrage",
+          "tm:round",
+          "tm:snore",
+          "tm:uproar",
+          "tutor:agility",
+          "tutor:astralbarrage"
+        ]
+      }
+    ],
+    "moves": [
+      "40:grassyterrain",
+      "tm:round",
+      "tm:snore"
+    ]
+  },
+  "cobblemon:eternatus": {
+    "forms": [],
+    "moves": [
+      "tutor:spikes"
+    ]
+  },
+  "cobblemon:kyurem": {
+    "forms": [
+      {
+        "name": "Black",
+        "moves": [
+          "form_change:freezeshock",
+          "form_change:fusionbolt"
+        ]
+      },
+      {
+        "name": "White",
+        "moves": [
+          "form_change:fusionflare",
+          "form_change:iceburn"
+        ]
+      }
+    ],
+    "moves": []
+  },
+  "cobblemon:marshadow": {
+    "forms": [],
+    "moves": [
+      "15:rollingkick",
+      "35:jumpkick",
+      "tm:confide",
+      "tm:doubleteam",
+      "tm:frustration",
+      "tm:hiddenpower",
+      "tm:return",
+      "tm:round",
+      "tm:snore",
+      "tm:swagger",
+      "tm:toxic"
+    ]
+  },
+  "cobblemon:necrozma": {
+    "forms": [
+      {
+        "name": "Dawn-Wings",
+        "moves": [
+          "tutor:trick"
+        ]
+      },
+      {
+        "name": "Dusk-Mane",
+        "moves": [
+          "tutor:trick"
+        ]
+      }
+    ],
+    "moves": [
+      "tutor:trick"
+    ]
+  },
+  "cobblemon:thundurus": {
+    "forms": [],
+    "moves": [
+      "tutor:block"
+    ]
+  },
+  "cobblemon:zacian": {
+    "forms": [
+      {
+        "name": "Crowned",
+        "moves": [
+          "1:bite",
+          "1:howl",
+          "1:metalclaw",
+          "1:quickattack",
+          "1:quickguard",
+          "1:sacredsword",
+          "11:slash",
+          "22:swordsdance",
+          "33:ironhead",
+          "44:nobleroar",
+          "55:crunch",
+          "66:moonblast",
+          "77:closecombat",
+          "88:gigaimpact",
+          "form_change:behemothblade",
+          "legacy:round",
+          "legacy:snore",
+          "tm:agility",
+          "tm:airslash",
+          "tm:assurance",
+          "tm:bodyslam",
+          "tm:brickbreak",
+          "tm:brutalswing",
+          "tm:closecombat",
+          "tm:crunch",
+          "tm:dazzlinggleam",
+          "tm:dig",
+          "tm:endure",
+          "tm:facade",
+          "tm:falseswipe",
+          "tm:firefang",
+          "tm:flashcannon",
+          "tm:focusblast",
+          "tm:focusenergy",
+          "tm:gigaimpact",
+          "tm:helpinghand",
+          "tm:hyperbeam",
+          "tm:hypervoice",
+          "tm:icefang",
+          "tm:imprison",
+          "tm:irondefense",
+          "tm:ironhead",
+          "tm:irontail",
+          "tm:laserfocus",
+          "tm:metalclaw",
+          "tm:mistyterrain",
+          "tm:playrough",
+          "tm:poisonjab",
+          "tm:protect",
+          "tm:psychicfangs",
+          "tm:psychocut",
+          "tm:rest",
+          "tm:retaliate",
+          "tm:revenge",
+          "tm:reversal",
+          "tm:scaryface",
+          "tm:sleeptalk",
+          "tm:snarl",
+          "tm:solarblade",
+          "tm:steelbeam",
+          "tm:substitute",
+          "tm:swift",
+          "tm:swordsdance",
+          "tm:tailslap",
+          "tm:takedown",
+          "tm:terablast",
+          "tm:thunderfang",
+          "tm:trailblaze",
+          "tm:wildcharge",
+          "tm:workup",
+          "tutor:dazzlinggleam",
+          "tutor:falseswipe",
+          "tutor:firefang",
+          "tutor:flashcannon",
+          "tutor:focusenergy",
+          "tutor:gigaimpact",
+          "tutor:helpinghand",
+          "tutor:hyperbeam",
+          "tutor:hypervoice",
+          "tutor:icefang",
+          "tutor:irondefense",
+          "tutor:ironhead",
+          "tutor:irontail",
+          "tutor:laserfocus",
+          "tutor:playrough",
+          "tutor:poisonjab",
+          "tutor:psychocut",
+          "tutor:rest",
+          "tutor:sleeptalk",
+          "tutor:snarl",
+          "tutor:steelbeam",
+          "tutor:swift",
+          "tutor:thunderfang",
+          "tutor:wildcharge"
+        ]
+      }
+    ],
+    "moves": []
+  },
+  "cobblemon:zamazenta": {
+    "forms": [
+      {
+        "name": "Crowned",
+        "moves": [
+          "1:bite",
+          "1:howl",
+          "1:metalclaw",
+          "1:quickattack",
+          "1:wideguard",
+          "11:slash",
+          "22:irondefense",
+          "33:ironhead",
+          "44:metalburst",
+          "55:crunch",
+          "66:moonblast",
+          "77:closecombat",
+          "88:gigaimpact",
+          "form_change:behemothbash",
+          "legacy:round",
+          "legacy:snore",
+          "tm:agility",
+          "tm:bodypress",
+          "tm:bodyslam",
+          "tm:brickbreak",
+          "tm:closecombat",
+          "tm:coaching",
+          "tm:crunch",
+          "tm:dazzlinggleam",
+          "tm:dig",
+          "tm:endure",
+          "tm:facade",
+          "tm:firefang",
+          "tm:flashcannon",
+          "tm:focusblast",
+          "tm:focusenergy",
+          "tm:gigaimpact",
+          "tm:guardswap",
+          "tm:heavyslam",
+          "tm:helpinghand",
+          "tm:hyperbeam",
+          "tm:hypervoice",
+          "tm:icefang",
+          "tm:imprison",
+          "tm:irondefense",
+          "tm:ironhead",
+          "tm:irontail",
+          "tm:laserfocus",
+          "tm:lightscreen",
+          "tm:metalclaw",
+          "tm:payback",
+          "tm:playrough",
+          "tm:powerswap",
+          "tm:protect",
+          "tm:psychicfangs",
+          "tm:raindance",
+          "tm:reflect",
+          "tm:rest",
+          "tm:retaliate",
+          "tm:revenge",
+          "tm:reversal",
+          "tm:roar",
+          "tm:safeguard",
+          "tm:sandstorm",
+          "tm:scaryface",
+          "tm:sleeptalk",
+          "tm:snarl",
+          "tm:solarbeam",
+          "tm:steelbeam",
+          "tm:stoneedge",
+          "tm:substitute",
+          "tm:sunnyday",
+          "tm:swift",
+          "tm:tailslap",
+          "tm:takedown",
+          "tm:terablast",
+          "tm:thunderfang",
+          "tm:trailblaze",
+          "tm:wildcharge",
+          "tm:workup",
+          "tutor:coaching",
+          "tutor:dazzlinggleam",
+          "tutor:firefang",
+          "tutor:flashcannon",
+          "tutor:focusenergy",
+          "tutor:gigaimpact",
+          "tutor:helpinghand",
+          "tutor:hyperbeam",
+          "tutor:hypervoice",
+          "tutor:icefang",
+          "tutor:irondefense",
+          "tutor:ironhead",
+          "tutor:irontail",
+          "tutor:laserfocus",
+          "tutor:playrough",
+          "tutor:rest",
+          "tutor:sleeptalk",
+          "tutor:snarl",
+          "tutor:steelbeam",
+          "tutor:stoneedge",
+          "tutor:swift",
+          "tutor:thunderfang",
+          "tutor:wildcharge"
+        ]
+      }
+    ],
+    "moves": []
+  },
+  "cobblemon:zygarde": {
+    "forms": [
+      {
+        "name": "Core",
+        "moves": [
+          "1:bulldoze"
+        ]
+      }
+    ],
+    "moves": []
+  }
+}

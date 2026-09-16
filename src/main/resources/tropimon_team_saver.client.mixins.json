@@ -3,6 +3,12 @@
   "package": "fr.tropimon.teamsaver.mixin.client",
   "compatibilityLevel": "JAVA_21",
   "client": [
+    "StorageRevisionMixin",
+    "StorageSnapshotRevisionMixin",
+    "PartyRevisionMixin",
+    "PokemonRevisionMixin",
+    "SpeciesRevisionMixin",
+    "MovesRevisionMixin",
     "HeldItemPostMixin",
     "PokeBallRendererMixin",
     "PokemonRendererMixin",

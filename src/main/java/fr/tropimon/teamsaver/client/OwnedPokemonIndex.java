@@ -16,6 +16,25 @@ final class OwnedPokemonIndex {
     private final Map<UUID, Entry> byUuid = new LinkedHashMap<>();
     private final Map<String, List<Entry>> bySpecies = new LinkedHashMap<>();
     private List<Entry> all = List.of();
+    private long revision = -1;
+    private long pokemonRevision = -1;
+
+    boolean refreshIfChanged(PCGUI gui) {
+        if (revision != ClientDataRevision.storage()) {
+            refresh(gui);
+            return true;
+        }
+        if (pokemonRevision == ClientDataRevision.pokemon()) return false;
+        // Evolution/form updates mutate Pokémon in place. Rebuild the species index
+        // from our existing references, without reading every PC box again.
+        List<Entry> previous = all;
+        byUuid.clear();
+        bySpecies.clear();
+        List<Entry> collected = new ArrayList<>(previous.size());
+        for (Entry entry : previous) add(collected, entry.pokemon, entry.position, entry.party, entry.box);
+        finishRefresh(collected);
+        return true;
+    }
 
     void refresh(PCGUI gui) {
         byUuid.clear();
@@ -32,8 +51,14 @@ final class OwnedPokemonIndex {
                 if (pokemon != null) add(collected, pokemon, new PCPosition(box, slot), false, box);
             }
         }
+        revision = ClientDataRevision.storage();
+        finishRefresh(collected);
+    }
+
+    private void finishRefresh(List<Entry> collected) {
         all = List.copyOf(collected);
         bySpecies.replaceAll((key, value) -> List.copyOf(value));
+        pokemonRevision = ClientDataRevision.pokemon();
     }
 
     private void add(List<Entry> collected, Pokemon pokemon, StorePosition position, boolean party, int box) {

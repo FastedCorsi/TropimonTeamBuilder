@@ -1,0 +1,2 @@
+# path	category	SHA-256 of UTF-8/LF source	review reason
+src/test/java/fr/tropimon/teamsaver/client/ShowdownPasteTest.java	email-review-required	bdcd436f9e7ea23e093eb400bf8b890424b7acfcaf256131f4e1f530ae6d1c9f	Fictional URL userinfo in a rejection test, not developer contact data. Any source change requires another review.

@@ -5,6 +5,8 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertSame;
 
 import fr.tropimon.teamsaver.TeamJson;
 import fr.tropimon.teamsaver.model.TeamModels.PlayerData;
@@ -17,6 +19,88 @@ import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
 final class TeamModelsTest {
+    @Test
+    void movingTeamsPreservesSetsIdsAndReturnPositionsAcrossPages() {
+        PlayerData data = new PlayerData();
+        for (int index = 0; index < 120; index++) {
+            // Identical labels must not confuse selection or reorder distinct teams.
+            data.teams.add(team(UUID.randomUUID().toString(), "Same name"));
+        }
+        SavedTeam moved = data.teams.get(6);
+        SavedSlot slot = moved.slots.getFirst();
+        slot.moveIds.add("stealthrock");
+        slot.abilityId = "roughskin";
+        slot.natureId = "jolly";
+        slot.evs.put("atk", 252);
+        data.returnSlots.put(slot.pokemonId, "3:12");
+        var before = new ArrayList<>(data.teams);
+        String preset = TeamJson.GSON.toJson(moved);
+
+        assertTrue(data.moveTeam(6, 5));
+        assertSame(moved, data.teams.get(5));
+        assertSame(before.get(5), data.teams.get(6));
+        assertEquals(preset, TeamJson.GSON.toJson(moved));
+        assertEquals("3:12", data.returnSlots.get(slot.pokemonId));
+        assertEquals(120, data.teams.size());
+
+        assertTrue(data.moveTeam(5, 6));
+        assertEquals(before, data.teams); // Also covers rollback after a failed save.
+        assertTrue(data.moveTeam(6, 119));
+        assertSame(moved, data.teams.getLast());
+        assertEquals(before.subList(7, 120), data.teams.subList(6, 119));
+    }
+
+    @Test
+    void teamOrderSurvivesJsonReloadAndNormalization() {
+        PlayerData data = new PlayerData();
+        for (int i = 0; i < 14; i++) data.teams.add(team(UUID.randomUUID().toString(), "Team " + i));
+        assertTrue(data.moveTeam(0, 13));
+        assertTrue(data.moveTeam(6, 5));
+        var expectedIds = data.teams.stream().map(team -> team.id).toList();
+
+        PlayerData restored = TeamJson.GSON.fromJson(TeamJson.GSON.toJson(data), PlayerData.class);
+        restored.normalize();
+        assertEquals(expectedIds, restored.teams.stream().map(team -> team.id).toList());
+        assertEquals(TeamJson.GSON.toJson(data), TeamJson.GSON.toJson(restored));
+    }
+
+    @Test
+    void swappingBattleSlotsPreservesTheCompleteSetsAndSurvivesReload() {
+        SavedTeam team = new SavedTeam();
+        SavedSlot lead = new SavedSlot(UUID.randomUUID().toString(), "cobblemon:dragonite", null,
+                "minecraft:leftovers", "multiscale", List.of("protect"), "jolly", Map.of("spe", 252));
+        SavedSlot partner = new SavedSlot(UUID.randomUUID().toString(), "cobblemon:amoonguss", null,
+                "minecraft:rocky_helmet", "regenerator", List.of("ragepowder"), "relaxed", Map.of("hp", 252));
+        team.slots.addAll(List.of(lead, partner));
+        String leadSet = TeamJson.GSON.toJson(lead);
+        String partnerSet = TeamJson.GSON.toJson(partner);
+
+        assertTrue(team.swapSlots(0, 1));
+        assertEquals(partnerSet, TeamJson.GSON.toJson(team.slots.get(0)));
+        assertEquals(leadSet, TeamJson.GSON.toJson(team.slots.get(1)));
+
+        SavedTeam restored = TeamJson.GSON.fromJson(TeamJson.GSON.toJson(team), SavedTeam.class);
+        restored.normalize();
+        assertEquals(partnerSet, TeamJson.GSON.toJson(restored.slots.get(0)));
+        assertEquals(leadSet, TeamJson.GSON.toJson(restored.slots.get(1)));
+    }
+
+    @Test
+    void invalidReorderRequestsNeverChangeData() {
+        PlayerData data = new PlayerData();
+        assertFalse(data.moveTeam(0, 1));
+        data.teams.add(team(UUID.randomUUID().toString(), "Only team"));
+        String before = TeamJson.GSON.toJson(data);
+        assertFalse(data.moveTeam(0, 0));
+        assertFalse(data.moveTeam(0, -1));
+        assertFalse(data.moveTeam(0, 1));
+        assertFalse(data.moveTeam(-1, 0));
+        assertFalse(data.moveTeam(1, 0));
+        assertEquals(before, TeamJson.GSON.toJson(data));
+        data.teams = null;
+        assertFalse(data.moveTeam(0, 1));
+    }
+
     @Test
     void teamNamesAreSanitizedAndLimited() {
         assertEquals("Team", TeamModels.cleanName("\n\t"));

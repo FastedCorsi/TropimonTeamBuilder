@@ -27,21 +27,22 @@ final class CobblemonCatalogueCache {
     static final CobblemonCatalogueCache INSTANCE = new CobblemonCatalogueCache();
 
     private volatile Snapshot snapshot;
+    private volatile long revision = -1;
 
     private CobblemonCatalogueCache() {
     }
 
     Snapshot snapshot() {
         Snapshot current = snapshot;
-        if (current != null) return current;
+        if (current != null && revision == ClientDataRevision.catalogue()) return current;
         synchronized (this) {
-            if (snapshot == null) snapshot = build();
+            if (snapshot == null || revision != ClientDataRevision.catalogue()) {
+                long buildingRevision = ClientDataRevision.catalogue();
+                snapshot = build();
+                revision = buildingRevision;
+            }
             return snapshot;
         }
-    }
-
-    void invalidate() {
-        snapshot = null;
     }
 
     private Snapshot build() {

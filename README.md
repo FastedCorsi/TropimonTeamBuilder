@@ -1,10 +1,10 @@
 # Tropimon Team Builder
 
+By FastedCorsi
+
 Gestionnaire d'équipes compétitives **100 % client-side** pour Minecraft 1.21.1 et Cobblemon 1.7.2.
 
 Tropimon Team Builder ajoute un véritable onglet `Teams` à l'interface du PC Cobblemon. Il permet de créer, sauvegarder et appliquer plusieurs compositions sans base de données ni mod serveur.
-
-![Vue d'une équipe sauvegardée](docs/screenshots/team-overview.png)
 
 ## Points forts
 
@@ -33,17 +33,11 @@ Le navigateur de type Pokémon Showdown propose deux modes :
 - `Possédés` : uniquement les Pokémon présents dans l'équipe ou les boîtes.
 - `Tous` : toutes les espèces chargées par Cobblemon. Un Pokémon non possédé sert de modèle. Après sa capture, le bouton `Associer` retrouve les exemplaires compatibles et conserve automatiquement la partie du set réellement apprise. Les attaques manquantes sont affichées en rouge dans l'interface et rappelées uniquement dans le chat local.
 
-![Navigateur de Pokémon](docs/screenshots/pokemon-browser.png)
-
 ## Attaques et objets
 
 Chaque preset peut mémoriser jusqu'à quatre attaques déjà apprises. Les attaques du preset sont appliquées sans modifier leurs PP actuels.
 
-![Gestion des attaques](docs/screenshots/move-manager.png)
-
 Dans l'éditeur de set, le sélecteur propose tout le catalogue compétitif afin de préparer une composition librement. La disponibilité réelle reste affichée. Pour équiper automatiquement un objet, il doit être présent dans les 36 emplacements principaux de l'inventaire ; un objet provenant d'une shulker doit donc d'abord être sorti manuellement.
-
-![Sélecteur d'objets](docs/screenshots/item-picker.png)
 
 ## Assistant Ranked Tropimon
 
@@ -62,8 +56,8 @@ Pour chaque Pokémon compatible, le mod propose le talent, l'objet, les quatre a
 Prérequis :
 
 - Minecraft `1.21.1`
-- Fabric Loader `0.16.0` ou plus récent
-- Fabric API
+- Fabric Loader `0.17.2` ou plus récent
+- Fabric API `0.116.6+1.21.1` ou plus récent
 - Cobblemon `1.7.2`
 - Fabric Language Kotlin
 
@@ -77,6 +71,18 @@ Téléchargez `TropimonTeamBuilder-<version>.jar` depuis les [releases GitHub](h
 4. Enregistrez, sélectionnez la composition, puis cliquez sur `Équiper`.
 
 L'accès distant dépend des fonctions autorisées par le serveur. Si une composition nécessite de déplacer des Pokémon entre l'équipe et les boîtes, le serveur doit fournir un accès PC distant compatible ; sinon, ouvrez un PC placé dans le monde.
+
+### Import Showdown / Poképaste
+
+Depuis `Mes équipes`, cliquez sur `Importer un paste`. Collez le texte exporté par Showdown ou une URL HTTPS `pokepast.es`, puis importez. L'équipe s'ouvre en brouillon : vérifiez les sets, associez vos Pokémon capturés et enregistrez.
+
+L'import reprend espèces/formes, objets, talents, natures, EV et jusqu'à quatre attaques par Pokémon. Il ne modifie aucun Pokémon possédé. Les champs non pris en charge (IV, Téra, niveau, surnom, etc.) sont signalés comme ignorés. Une espèce, un objet, un talent ou une attaque inconnus refusent l'import entier ; une attaque connue mais incompatible avec la forme reste soumise à la validation habituelle. Le téléchargement est limité en taille et en durée, et annulé à la fermeture.
+
+### Indépendance et caches
+
+Team Builder n'utilise aucun service, classe, configuration ou état privé d'un autre mod Tropimon. Les compléments locaux de learnsets appartiennent à ce mod ; les registres synchronisés sont ceux de Cobblemon. Aucun autre mod Tropimon n'est nécessaire. Les mises à jour futures des compléments privés d'autres mods ne seront pas lues automatiquement.
+
+Le Team Doctor mémorise ses membres et son résultat tant que les sets, noms affichés, style, langue et catalogue ne changent pas. L'index du PC et les validations d'affichage suivent les mises à jour de stockage/Pokémon et d'inventaire. Les validations avant sauvegarde et équipement restent exécutées en direct ; les automatismes et leurs protections ne sont pas modifiés.
 
 ## Sauvegardes
 
@@ -104,6 +110,24 @@ Le wrapper Gradle utilise Java 21 :
 
 Le build utilise automatiquement les dépendances du launcher Tropimon lorsqu'elles sont présentes, puis les dépôts Fabric et Modrinth en solution de repli. Le JAR est généré dans `build/libs/TropimonTeamBuilder-<version>.jar`.
 
+Pour compiler et tester exclusivement contre les dépendances officielles :
+
+```powershell
+.\gradlew.bat build -PofficialDependenciesOnly
+```
+
+Le script `scripts/qa-production.ps1` utilise un compte de test hors ligne et un profil isolé sous `build/qa`. L'option `-WithTropimonMods` copie les autres mods et leurs dépendances dans ce profil de test seulement. Aucun JAR n'est installé dans le launcher. Le rapport de vérification de la version 0.59.4 se trouve dans [docs/qa-0.59.4.md](docs/qa-0.59.4.md).
+
 ## Licence
 
+Le contrôle permanent des sources et JAR est décrit dans [docs/privacy.md](docs/privacy.md). Les anciens fichiers distribués et l'historique ne sont pas effacés par un nettoyage local.
+
 Tous droits réservés. Consultez [LICENSE](LICENSE).
+
+
+## Mises à jour automatiques
+
+Le mod vérifie sa propre Release GitHub au démarrage, au maximum une fois toutes les six heures. Lorsqu'une version plus récente est disponible, son JAR et son SHA-256 sont contrôlés, puis la mise à jour est installée après l'arrêt de Minecraft avec sauvegarde de l'ancien JAR. Le launcher peut rester ouvert.
+
+La vérification s'effectue en arrière-plan et n'ajoute aucun travail par tick. Elle peut être désactivée avec "enabled": false dans config/tropimon_team_saver-updater.json.
+

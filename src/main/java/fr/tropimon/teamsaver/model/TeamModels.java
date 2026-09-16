@@ -1,6 +1,7 @@
 package fr.tropimon.teamsaver.model;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -22,6 +23,14 @@ public final class TeamModels {
         public List<SavedTeam> teams = new ArrayList<>();
         /** Pokémon UUID -> "box:slot". */
         public LinkedHashMap<String, String> returnSlots = new LinkedHashMap<>();
+
+        /** Moves one saved team without modifying its set, identity or PC return positions. */
+        public boolean moveTeam(int from, int to) {
+            if (teams == null || from < 0 || to < 0 || from >= teams.size() || to >= teams.size()
+                    || from == to) return false;
+            teams.add(to, teams.remove(from));
+            return true;
+        }
 
         public void normalize() {
             if (teams == null) teams = new ArrayList<>();
@@ -53,6 +62,14 @@ public final class TeamModels {
         public String id;
         public String name;
         public List<SavedSlot> slots = new ArrayList<>();
+
+        /** Exchanges two battle positions without changing either saved set. */
+        public boolean swapSlots(int first, int second) {
+            if (slots == null || first < 0 || second < 0 || first >= slots.size() || second >= slots.size()
+                    || first == second) return false;
+            Collections.swap(slots, first, second);
+            return true;
+        }
 
         public void normalize() {
             name = cleanName(name);

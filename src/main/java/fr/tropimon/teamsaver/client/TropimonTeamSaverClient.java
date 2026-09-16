@@ -9,6 +9,12 @@ import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents;
 import net.fabricmc.fabric.api.client.screen.v1.Screens;
+import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
+import net.fabricmc.fabric.api.resource.ResourceManagerHelper;
+import net.fabricmc.fabric.api.resource.SimpleSynchronousResourceReloadListener;
+import net.minecraft.resource.ResourceManager;
+import net.minecraft.resource.ResourceType;
+import net.minecraft.util.Identifier;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.util.InputUtil;
@@ -33,6 +39,24 @@ public final class TropimonTeamSaverClient implements ClientModInitializer {
 
     @Override
     public void onInitializeClient() {
+        TropimonSelfUpdater.start(LOGGER);
+        ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> invalidateReadCaches());
+        ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> invalidateReadCaches());
+        com.cobblemon.mod.common.api.moves.Moves.INSTANCE.getObservable().subscribe(
+                ignored -> ClientDataRevision.catalogueChanged());
+        com.cobblemon.mod.common.api.pokemon.PokemonSpecies.INSTANCE.getObservable().subscribe(
+                ignored -> ClientDataRevision.catalogueChanged());
+        com.cobblemon.mod.common.pokemon.SpeciesAdditions.INSTANCE.getObservable().subscribe(
+                ignored -> ClientDataRevision.catalogueChanged());
+        ResourceManagerHelper.get(ResourceType.CLIENT_RESOURCES).registerReloadListener(
+                new SimpleSynchronousResourceReloadListener() {
+                    @Override public Identifier getFabricId() {
+                        return Identifier.of("tropimon_team_saver", "read_models");
+                    }
+                    @Override public void reload(ResourceManager manager) {
+                        ClientDataRevision.catalogueChanged();
+                    }
+                });
         ScreenEvents.AFTER_INIT.register((client, screen, scaledWidth, scaledHeight) -> {
             if (!(screen instanceof PCGUI pcGui) || pcGui.getConfiguration().getSelectOverride() != null) return;
             if (openTeamsAfterRemotePc) {
@@ -80,6 +104,12 @@ public final class TropimonTeamSaverClient implements ClientModInitializer {
         LOGGER.info("Tropimon Team Builder client-only initialized");
     }
 
+    private static void invalidateReadCaches() {
+        ClientDataRevision.catalogueChanged();
+        ClientDataRevision.storageChanged();
+        ClientDataRevision.pokemonChanged();
+    }
+
     static boolean requestRemotePcForApply(String teamId) {
         return requestRemotePc(teamId);
     }
@@ -125,3 +155,4 @@ public final class TropimonTeamSaverClient implements ClientModInitializer {
         client.setScreen(new TeamManagerScreen(virtualParent, true));
     }
 }
+

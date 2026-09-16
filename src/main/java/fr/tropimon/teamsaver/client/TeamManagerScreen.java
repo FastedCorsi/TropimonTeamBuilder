@@ -63,8 +63,10 @@ public final class TeamManagerScreen extends Screen {
             "textures/gui/summary/summary_side_spacer.png");
     private static final int PANEL_WIDTH = 465;
     private static final int PANEL_HEIGHT = 255;
-    private static final int PAGE_SIZE = 7;
+    private static final int PAGE_SIZE = 8;
     private static final int LIST_X = 6;
+    private static final int LIST_START_Y = 61;
+    private static final int LIST_ROW_HEIGHT = 19;
     private static final int LEFT_CONTROL_WIDTH = 70;
     private static final int SIDEBAR_NAV_WIDTH = 18;
     private static final int SIDEBAR_NAV_LEFT_X = LIST_X + 2;
@@ -111,6 +113,8 @@ public final class TeamManagerScreen extends Screen {
     private static final int MOVE_PICKER_LIST_WIDTH = 213;
     private static final long MARQUEE_PAUSE_MS = 1_200L;
     private static final long MARQUEE_TRAVEL_MS = 2_800L;
+    private static final long DOUBLE_CLICK_MS = 350L;
+    private static final double SLOT_DRAG_THRESHOLD_SQUARED = 9.0;
     private static final int RANKED_VARIATION_ATTEMPTS = 8;
     private static final AtomicLong RANKED_VARIATION = new AtomicLong();
     private static boolean rememberedPokemonPickerAllSpecies;
@@ -137,11 +141,28 @@ public final class TeamManagerScreen extends Screen {
     private PlayerData data;
     private int selectedTeam;
     private int page;
+    private boolean reorderingTeams;
+    private final TeamListDrag teamDrag = new TeamListDrag();
+    private int teamDragEdgeTicks;
+    private int teamDragEdgeDirection;
     private boolean creating;
     private boolean confirmDelete;
     private int selectedDraftSlot = -1;
     private int selectedPreviewSlot = -1;
     private int draggedDraftSlot = -1;
+    private double draftPressX;
+    private double draftPressY;
+    private double draftDragX;
+    private double draftDragY;
+    private boolean draftDragging;
+    private int draggedPreviewSlot = -1;
+    private double previewPressX;
+    private double previewPressY;
+    private double previewDragX;
+    private double previewDragY;
+    private boolean previewDragging;
+    private int lastPreviewClickSlot = -1;
+    private long lastPreviewClickTime;
     private int pickerReplaceIndex = -1;
     private String editingTeamId;
     private String draftName = "";
@@ -172,6 +193,7 @@ public final class TeamManagerScreen extends Screen {
     private final List<PokemonChoice> pokemonChoices = new ArrayList<>();
     private final List<PokemonChoice> filteredPokemonChoices = new ArrayList<>();
     private final List<ModelWidget> pokemonPickerModels = new ArrayList<>();
+    private final Map<ModelWidget, RenderIdentity> pickerModelIdentities = new java.util.IdentityHashMap<>();
     private boolean pokemonPickerAllSpecies = rememberedPokemonPickerAllSpecies;
     private boolean pokemonPickerAssociationOnly;
     private PokemonChoice pendingAbilityPokemon;
@@ -211,6 +233,26 @@ public final class TeamManagerScreen extends Screen {
     private boolean teamDoctorOpen;
     private String lastApplyTeamId;
     private boolean applyInBackground;
+    private final ReadModelCache<TeamReadKey, TeamAnalysis> browserAnalysisCache = new ReadModelCache<>();
+    private final ReadModelCache<TeamReadKey, TeamValidationService.Report> draftValidationCache = new ReadModelCache<>();
+    private final TeamDoctorCache teamDoctorCache = new TeamDoctorCache();
+    private List<TeamDoctor.Finding> doctorFindings = List.of();
+    private TeamAnalysis browserAnalysis;
+    private String browserSummary = "";
+    private String browserSummaryLanguage = "";
+    private TeamValidationService.Report displayedDraftValidation;
+    private String draftSummaryLanguage = "";
+    private PcStyleButton equipButton;
+    private PcStyleButton saveButton;
+    private final Map<PokemonChoice, String> pickerSearchText = new java.util.IdentityHashMap<>();
+    private final Map<PokemonChoice, String> pickerNames = new java.util.IdentityHashMap<>();
+    private final Map<PokemonChoice, String> pickerDetails = new java.util.IdentityHashMap<>();
+    private final Map<PokemonChoice, Text> pickerAbilities = new java.util.IdentityHashMap<>();
+    private Map<String, Integer> itemPickerInventory = Map.of();
+    private long observedPokemonRevision = -1;
+    private long observedCatalogueRevision = -1;
+    private String observedLanguage = "";
+    private boolean pickerRefreshPending;
 
     TeamManagerScreen(PCGUI parent) {
         this(parent, false, null);
@@ -231,6 +273,9 @@ public final class TeamManagerScreen extends Screen {
 
     @Override
     protected void init() {
+        ownedPokemon.refreshIfChanged(parent);
+        equipButton = null;
+        saveButton = null;
         selectedTeam = Math.max(0, Math.min(selectedTeam, Math.max(0, data.teams.size() - 1)));
         page = Math.max(0, Math.min(page, Math.max(0, (data.teams.size() - 1) / PAGE_SIZE)));
         if (pokemonPickerOpen) {
@@ -243,7 +288,10 @@ public final class TeamManagerScreen extends Screen {
             initSetEditorInputs();
             return;
         }
-        if (teamDoctorOpen) return;
+        if (teamDoctorOpen) {
+            refreshDoctor();
+            return;
+        }
         initTabs(left(), top());
         if (creating) initEditor(left(), top());
         else initBrowser(left(), top());
@@ -279,15 +327,27 @@ public final class TeamManagerScreen extends Screen {
         create.active = !applying;
         addDrawableChild(create);
 
+        PcStyleButton paste = new PcStyleButton(left + PARTY_X + 6, top + 143, 70, 16,
+                ui("paste_import"), button -> client.setScreen(new PasteImportScreen(this))).withScrollingText();
+        paste.active = !applying;
+        addDrawableChild(paste);
+
+        PcStyleButton reorder = new PcStyleButton(left + PARTY_X + 6, top + 162, 70, 16,
+                ui(reorderingTeams ? "finish_reordering" : "reorder_teams"), button -> toggleTeamReordering(),
+                reorderingTeams ? PcStyleButton.Style.SELECTED : PcStyleButton.Style.NORMAL).withScrollingText();
+        reorder.active = !applying && (reorderingTeams || data.teams.size() > 1);
+        reorder.setTooltip(Tooltip.of(ui("tooltip_reorder_teams")));
+        addDrawableChild(reorder);
+
         int start = page * PAGE_SIZE;
         for (int row = 0; row < PAGE_SIZE && start + row < data.teams.size(); row++) {
             int index = start + row;
             SavedTeam team = data.teams.get(index);
             PcStyleButton.Style style = index == selectedTeam ? PcStyleButton.Style.SELECTED : PcStyleButton.Style.NORMAL;
-            PcStyleButton entry = new PcStyleButton(left + LIST_X, top + 61 + row * 19, LEFT_CONTROL_WIDTH, 16,
+            PcStyleButton entry = new PcStyleButton(left + LIST_X, top + LIST_START_Y + row * LIST_ROW_HEIGHT, LEFT_CONTROL_WIDTH, 16,
                     Text.literal(team.name), button -> selectTeam(index), style).withScrollingText();
             entry.active = !applying;
-            entry.setTooltip(Tooltip.of(ui("tooltip_team_count", team.name, team.slots.size())));
+            if (!reorderingTeams) entry.setTooltip(Tooltip.of(ui("tooltip_team_count", team.name, team.slots.size())));
             addDrawableChild(entry);
         }
 
@@ -312,7 +372,7 @@ public final class TeamManagerScreen extends Screen {
         } else {
             SavedTeam team = selectedTeam();
             addBrowserModels(team, left, top);
-            TeamAnalysis teamAnalysis = analysis(team);
+            TeamAnalysis teamAnalysis = cachedBrowserAnalysis(team);
 
             boolean retry = !applying && statusError && team.id.equals(lastApplyTeamId);
             PcStyleButton equip = new PcStyleButton(left + SCREEN_X + 6, top + MAIN_ACTION_Y,
@@ -324,6 +384,7 @@ public final class TeamManagerScreen extends Screen {
                     }, applying ? PcStyleButton.Style.DANGER : PcStyleButton.Style.NORMAL);
             equip.active = applying || teamAnalysis.validation.readyToEquip();
             equip.setTooltip(Tooltip.of(Text.literal(analysisSummary(teamAnalysis))));
+            equipButton = equip;
             addDrawableChild(equip);
 
             PcStyleButton edit = new PcStyleButton(left + SCREEN_X + 101, top + MAIN_ACTION_Y,
@@ -440,9 +501,10 @@ public final class TeamManagerScreen extends Screen {
 
         PcStyleButton save = new PcStyleButton(left + PARTY_X + 6, top + 200, 70, 16,
                 editingTeamId == null ? ui("save") : ui("update"), button -> saveDraft());
-        TeamValidationService.Report draftValidation = validate(draftAsTeam());
+        TeamValidationService.Report draftValidation = cachedDraftValidation();
         save.active = !draft.isEmpty() && draftValidation.readyToSave();
         save.setTooltip(Tooltip.of(Text.literal(validationSummary(draftValidation))));
+        saveButton = save;
         addDrawableChild(save);
         addDrawableChild(new PcStyleButton(left + PARTY_X + 6, top + 219, 70, 16,
                 ui("cancel"), button -> cancelEditor()));
@@ -475,12 +537,94 @@ public final class TeamManagerScreen extends Screen {
 
     private void selectTeam(int index) {
         if (ClientTeamApplier.isActive(this)) return;
+        cancelSlotGestures();
         selectedTeam = index;
         selectedPreviewSlot = -1;
         page = selectedTeam / PAGE_SIZE;
         confirmDelete = false;
         status = "";
         clearAndInit();
+    }
+
+    private void toggleTeamReordering() {
+        if (ClientTeamApplier.isActive(this)) return;
+        teamDrag.clear();
+        teamDragEdgeTicks = 0;
+        reorderingTeams = !reorderingTeams;
+        confirmDelete = false;
+        status = reorderingTeams ? uiText("tooltip_reorder_teams") : "";
+        statusError = false;
+        clearAndInit();
+    }
+
+    private void moveTeamTo(int from, int to) {
+        if (!reorderingTeams || creating || ClientTeamApplier.isActive(this)) return;
+        if (!data.moveTeam(from, to)) return;
+        if (!repository.save(client, data)) {
+            data.moveTeam(to, from);
+            status = uiText("error_save");
+            statusError = true;
+            clearAndInit();
+            return;
+        }
+        selectedTeam = to;
+        page = to / PAGE_SIZE;
+        confirmDelete = false;
+        status = uiText("status_team_moved", selectedTeam().name, to + 1, data.teams.size());
+        statusError = false;
+        clearAndInit();
+    }
+
+    private int teamListIndexAt(double mouseX, double mouseY) {
+        if (!isInside(mouseX, mouseY, left() + LIST_X, top() + LIST_START_Y,
+                LEFT_CONTROL_WIDTH, PAGE_SIZE * LIST_ROW_HEIGHT)) return -1;
+        double relativeY = mouseY - top() - LIST_START_Y;
+        int row = (int) (relativeY / LIST_ROW_HEIGHT);
+        int index = page * PAGE_SIZE + row;
+        return relativeY % LIST_ROW_HEIGHT < 16 && index < data.teams.size() ? index : -1;
+    }
+
+    private int teamDropBoundary(double mouseX, double mouseY) {
+        if (!isInside(mouseX, mouseY, left() + LIST_X, top() + LIST_START_Y - 4,
+                LEFT_CONTROL_WIDTH, PAGE_SIZE * LIST_ROW_HEIGHT + 8)) return -1;
+        int start = page * PAGE_SIZE;
+        int rows = Math.min(PAGE_SIZE, data.teams.size() - start);
+        return start + TeamListDrag.insertionRow(mouseY - top() - LIST_START_Y, LIST_ROW_HEIGHT, rows);
+    }
+
+    private void cancelTeamDrag() {
+        teamDrag.clear();
+        teamDragEdgeTicks = 0;
+        page = selectedTeam / PAGE_SIZE;
+        clearAndInit();
+    }
+
+    private void changeTeamDragPage(int direction) {
+        int next = Math.max(0, Math.min(teamPages() - 1, page + direction));
+        if (next == page) return;
+        page = next; // Keep the grabbed team selected, even on another page.
+        clearAndInit();
+    }
+
+    private void tickTeamDrag() {
+        if (teamDrag.team == null) return;
+        if (!client.isWindowFocused() || creating || !reorderingTeams || ClientTeamApplier.isActive(this)) {
+            cancelTeamDrag();
+            return;
+        }
+        int edge = 0;
+        if (teamDrag.dragging && teamDrag.x >= left() + LIST_X
+                && teamDrag.x < left() + LIST_X + LEFT_CONTROL_WIDTH) {
+            double y = teamDrag.y - top();
+            if (y >= LIST_START_Y - 8 && y < LIST_START_Y + 4) edge = -1;
+            if (y >= LIST_START_Y + PAGE_SIZE * LIST_ROW_HEIGHT - 4 && y < 235) edge = 1;
+        }
+        if (edge != teamDragEdgeDirection || edge == 0) teamDragEdgeTicks = 0;
+        teamDragEdgeDirection = edge;
+        if (edge != 0 && ++teamDragEdgeTicks >= 12) {
+            teamDragEdgeTicks = 0;
+            changeTeamDragPage(edge);
+        }
     }
 
     private void changePage(int direction) {
@@ -500,6 +644,8 @@ public final class TeamManagerScreen extends Screen {
 
     private void startCreating() {
         if (ClientTeamApplier.isActive(this)) return;
+        cancelSlotGestures();
+        reorderingTeams = false;
         creating = true;
         selectedPreviewSlot = -1;
         editingTeamId = null;
@@ -519,6 +665,8 @@ public final class TeamManagerScreen extends Screen {
 
     private void startEditing(SavedTeam team) {
         if (ClientTeamApplier.isActive(this)) return;
+        cancelSlotGestures();
+        reorderingTeams = false;
         creating = true;
         selectedPreviewSlot = -1;
         editingTeamId = team.id;
@@ -535,22 +683,54 @@ public final class TeamManagerScreen extends Screen {
             Pokemon pokemon = findPokemon(slot.pokemonId);
             String speciesId = slot.speciesId == null && pokemon != null ? speciesId(pokemon) : slot.speciesId;
             String formId = slot.formId == null && pokemon != null ? formId(pokemon) : slot.formId;
-            String abilityId = pokemon == null ? slot.abilityId : abilityId(pokemon);
-            List<String> moves = pokemon == null
-                    ? slot.moveIds == null ? new ArrayList<>() : new ArrayList<>(slot.moveIds)
-                    : activeMoveIds(pokemon);
-            String natureId = pokemon == null ? slot.natureId
-                    : pokemon.getEffectiveNature().getName().getPath();
-            Map<String, Integer> evs = pokemon == null
-                    ? slot.evs == null ? Map.of() : slot.evs : pokemonEvs(pokemon);
+            TeamPresetPolicy.SetValues preset = TeamPresetPolicy.saved(slot);
             draft.add(new DraftSlot(pokemon, slot.pokemonId, speciesId, formId, normalizedItemId(slot.itemId),
-                    abilityId, moves, natureId, evs,
+                    preset.abilityId(), preset.moveIds(), preset.natureId(), preset.evs(),
                     pokemon == null ? uiText("source_catalogue") : currentSource(pokemon)));
         }
         long capturedMatches = draft.stream()
                 .filter(slot -> slot.pokemon == null && !compatibleOwnedChoices(slot).isEmpty()).count();
         status = capturedMatches > 0 ? uiText("status_captured_matches", capturedMatches) : uiText("status_edit");
         statusError = false;
+        clearAndInit();
+    }
+
+    void importPaste(ShowdownPaste.Parsed paste) {
+        if (ClientTeamApplier.isActive(this)) return;
+        // Resolve the WHOLE paste before touching the existing editor or repository.
+        Map<String, CobblemonCatalogueCache.Entry> forms = new LinkedHashMap<>();
+        for (CobblemonCatalogueCache.Entry entry : catalogue.snapshot().entries()) {
+            forms.putIfAbsent(rankedKey(entry.species(), entry.form()), entry);
+        }
+        List<DraftSlot> imported = new ArrayList<>();
+        int illegalMoves = 0;
+        for (ShowdownPaste.Member member : paste.members()) {
+            CobblemonCatalogueCache.Entry entry = forms.get(ShowdownPaste.key(member.species()));
+            if (entry == null) throw new IllegalArgumentException("unknown_species");
+            String item = member.item().isBlank() ? "minecraft:air" : rankedItemId(member.item());
+            if (item == null) throw new IllegalArgumentException("unknown_item");
+            String ability = member.ability().isBlank() ? null : rankedAbilityId(entry.form(), member.ability());
+            if (!member.ability().isBlank() && ability == null) throw new IllegalArgumentException("unknown_ability");
+            String nature = member.nature().isBlank() ? null : member.nature();
+            if (nature != null && !NATURE_IDS.contains(nature)) throw new IllegalArgumentException("unknown_nature");
+            for (String id : member.moves()) {
+                if (com.cobblemon.mod.common.api.moves.Moves.getByName(id) == null) {
+                    throw new IllegalArgumentException("unknown_move");
+                }
+                if (!entry.legalMoveIds().contains(id)) illegalMoves++;
+            }
+            imported.add(new DraftSlot(null, null, entry.species().getResourceIdentifier().toString(),
+                    formId(entry.form(), entry.species()), item, ability, member.moves(), nature,
+                    member.evs(), uiText("source_catalogue")));
+        }
+        cancelRankedHelperRequest();
+        startCreating();
+        draft.addAll(imported);
+        draftName = TeamModels.cleanName(paste.name().isBlank() ? uiText("paste_default_name") : paste.name());
+        status = uiText("paste_imported", imported.size());
+        if (!paste.ignoredFields().isEmpty()) status += " · " + uiText("paste_ignored", String.join(", ", paste.ignoredFields()));
+        if (illegalMoves > 0) status += " · " + uiText("validation_illegal_moves", illegalMoves);
+        statusError = illegalMoves > 0 || !paste.ignoredFields().isEmpty();
         clearAndInit();
     }
 
@@ -599,7 +779,6 @@ public final class TeamManagerScreen extends Screen {
 
         pokemonPickerExcluded.clear();
         for (int i = 0; i < draft.size(); i++) {
-            if (i == replaceIndex) continue;
             UUID id = parseUuid(draft.get(i).pokemonId);
             if (id != null) pokemonPickerExcluded.add(id);
         }
@@ -630,6 +809,43 @@ public final class TeamManagerScreen extends Screen {
             filterPokemonChoices();
             clearAndInit();
         }
+    }
+
+    private void quickReplaceFromBrowser(int slotIndex) {
+        if (data.teams.isEmpty() || slotIndex < 0 || slotIndex >= selectedTeam().slots.size()) return;
+        SavedTeam team = selectedTeam();
+        startEditing(team);
+        selectedDraftSlot = slotIndex;
+        replaceOrAssociate(slotIndex);
+    }
+
+    private void swapSavedSlots(int source, int target) {
+        if (data.teams.isEmpty() || source == target) return;
+        SavedTeam team = selectedTeam();
+        if (source < 0 || target < 0 || source >= team.slots.size() || target >= team.slots.size()) return;
+        SavedTeam before = copyTeam(team);
+        if (!team.swapSlots(source, target)) return;
+        if (!repository.save(client, data)) {
+            data.teams.set(selectedTeam, before);
+            status = uiText("error_save");
+            statusError = true;
+            clearAndInit();
+            return;
+        }
+        String teamId = team.id;
+        setUndo(uiText("undo_slot_order", team.name), () -> restoreTeam(teamId, before));
+        selectedPreviewSlot = target;
+        status = uiText("status_order", source + 1, target + 1);
+        statusError = false;
+        clearAndInit();
+    }
+
+    private void cancelSlotGestures() {
+        draggedDraftSlot = -1;
+        draftDragging = false;
+        draggedPreviewSlot = -1;
+        previewDragging = false;
+        lastPreviewClickSlot = -1;
     }
 
     private void autoAssociateAll() {
@@ -753,9 +969,12 @@ public final class TeamManagerScreen extends Screen {
         setInitialFocus(pokemonSearchField);
 
         pokemonPickerModels.clear();
+        pickerModelIdentities.clear();
+        if (catalogue.snapshot().entries().isEmpty()) return;
         int rows = pokemonPickerRows();
         for (int row = 0; row < rows; row++) {
-            ModelWidget model = new ModelWidget(left + 4, top + 57 + row * POKEMON_PICKER_ROW_HEIGHT,
+            ModelWidget model = createModelWidget(left + 4,
+                    top + 57 + row * POKEMON_PICKER_ROW_HEIGHT,
                     34, 21, placeholderRenderable(), 0.62F, 35.0F, 1.0, false, false);
             pokemonPickerModels.add(model);
             addDrawableChild(model);
@@ -764,13 +983,17 @@ public final class TeamManagerScreen extends Screen {
     }
 
     private void scanPokemonChoices() {
+        pickerSearchText.clear();
+        pickerNames.clear();
+        pickerDetails.clear();
+        pickerAbilities.clear();
         pokemonChoices.clear();
-        for (OwnedPokemonIndex.Entry entry : ownedPokemon.all()) {
-            if (!pokemonPickerExcluded.contains(entry.pokemon().getUuid())) pokemonChoices.add(ownedChoice(entry));
-        }
         if (pokemonPickerAllSpecies) {
-            pokemonChoices.clear();
             for (CobblemonCatalogueCache.Entry entry : catalogue.snapshot().entries()) addCatalogueChoice(entry);
+        } else {
+            for (OwnedPokemonIndex.Entry entry : ownedPokemon.all()) {
+                if (!pokemonPickerExcluded.contains(entry.pokemon().getUuid())) pokemonChoices.add(ownedChoice(entry));
+            }
         }
         filterPokemonChoices();
     }
@@ -1765,6 +1988,7 @@ public final class TeamManagerScreen extends Screen {
     }
 
     private void filterPokemonChoices() {
+        pickerDetails.clear(); // Also called when the selected Ranked season/data changes.
         filteredPokemonChoices.clear();
         String query = pokemonPickerQuery == null ? "" : pokemonPickerQuery.strip().toLowerCase(Locale.ROOT);
         for (PokemonChoice choice : pokemonChoices) {
@@ -1777,7 +2001,7 @@ public final class TeamManagerScreen extends Screen {
 
     private Comparator<PokemonChoice> pokemonChoiceComparator() {
         Comparator<PokemonChoice> byName = Comparator.comparing(
-                this::choiceDisplayName, String.CASE_INSENSITIVE_ORDER);
+                choice -> pickerNames.computeIfAbsent(choice, this::choiceDisplayName), String.CASE_INSENSITIVE_ORDER);
         Comparator<PokemonChoice> byLevel = Comparator.comparingInt(this::pokemonChoiceLevel).reversed();
         Comparator<PokemonChoice> byEvolutionStage = Comparator.comparingInt(this::evolutionPriority);
         if (pokemonPickerSortStat == null) {
@@ -1817,6 +2041,10 @@ public final class TeamManagerScreen extends Screen {
     }
 
     private String pokemonSearchText(PokemonChoice choice) {
+        return pickerSearchText.computeIfAbsent(choice, this::buildPokemonSearchText);
+    }
+
+    private String buildPokemonSearchText(PokemonChoice choice) {
         Pokemon pokemon = choice.pokemon;
         Species species = choice.species;
         FormData form = choice.form;
@@ -1857,7 +2085,8 @@ public final class TeamManagerScreen extends Screen {
     private Unit selectPokemon(PokemonChoice choice, String selectedAbility) {
         int target = pickerReplaceIndex;
         Pokemon pokemon = choice.pokemon;
-        if (target >= 0 && target < draft.size() && draft.get(target).pokemon == null && pokemon != null) {
+        if (target >= 0 && target < draft.size() && pokemon != null
+                && shouldKeepPreset(draft.get(target), choice)) {
             DraftSlot planned = draft.get(target);
             if (!plannedAbilityMatches(planned, pokemon)) {
                 status = uiText("error_association_ability", displayName(planned),
@@ -1911,6 +2140,12 @@ public final class TeamManagerScreen extends Screen {
         return Unit.INSTANCE;
     }
 
+    private boolean shouldKeepPreset(DraftSlot planned, PokemonChoice replacement) {
+        if (planned == null || replacement == null || replacement.pokemon == null) return false;
+        if (planned.pokemon == null) return true;
+        return rankedKey(planned).equals(rankedKey(replacement));
+    }
+
     private boolean plannedAbilityMatches(DraftSlot target, Pokemon pokemon) {
         String wanted = TeamModels.canonicalAbilityId(target == null ? null : target.abilityId);
         return wanted == null || wanted.equals(abilityId(pokemon));
@@ -1919,12 +2154,11 @@ public final class TeamManagerScreen extends Screen {
     private AssociationOutcome associateCapturedPokemon(int target, PokemonChoice choice) {
         DraftSlot previous = draft.get(target);
         Pokemon pokemon = choice.pokemon;
-        List<String> moves = activeMoveIds(pokemon);
+        List<String> activeMoves = activeMoveIds(pokemon);
         List<String> missing = List.of();
         if (!previous.moveIds.isEmpty()) {
             TeamMoveReconciler.Result reconciliation = reconcilePlannedMoves(pokemon, previous.moveIds);
             missing = reconciliation.missing();
-            moves = reconciliation.selected();
         }
         String selectedForm = previous.formId == null ? formId(choice.form, choice.species) : previous.formId;
         String effectiveNature = pokemon.getEffectiveNature().getName().getPath();
@@ -1933,9 +2167,13 @@ public final class TeamManagerScreen extends Screen {
                 && !RankedUsageService.key(previous.natureId).equals(
                 RankedUsageService.key(effectiveNature));
         boolean evMismatch = hasPlannedEvs(previous.evs) && !plannedEvsMatch(previous.evs, actualEvs);
+        SavedSlot planned = new SavedSlot(previous.pokemonId, previous.speciesId, previous.formId,
+                previous.itemId, previous.abilityId, previous.moveIds, previous.natureId, previous.evs);
+        TeamPresetPolicy.SetValues preset = TeamPresetPolicy.afterAssociation(planned,
+                abilityId(pokemon), activeMoves, effectiveNature, actualEvs);
         DraftSlot replacement = new DraftSlot(pokemon, pokemon.getUuid().toString(),
                 choice.species.getResourceIdentifier().toString(), selectedForm, previous.itemId,
-                abilityId(pokemon), moves, effectiveNature, actualEvs, choice.source);
+                preset.abilityId(), preset.moveIds(), preset.natureId(), preset.evs(), choice.source);
         draft.set(target, replacement);
         if (rankedTeamGenerated) rankedLockedSlots.add(target);
         selectedDraftSlot = target;
@@ -2002,6 +2240,7 @@ public final class TeamManagerScreen extends Screen {
 
     private void saveDraft() {
         if (draft.isEmpty()) return;
+        ownedPokemon.refreshIfChanged(parent);
         TeamValidationService.Report validation = validate(draftAsTeam());
         if (!validation.readyToSave()) {
             applyFailed(validationSummary(validation));
@@ -2418,23 +2657,45 @@ public final class TeamManagerScreen extends Screen {
         }
     }
 
-    private void addPokemonModel(Pokemon pokemon, int x, int y, int width, int height) {
-        addPokemonModel(pokemon, x, y, width, height, 0.8F);
-    }
-
     private void addPokemonModel(Pokemon pokemon, int x, int y, int width, int height, float scale) {
         RenderablePokemon renderable = new RenderablePokemon(pokemon.getSpecies(), pokemon.getAspects(), ItemStack.EMPTY);
-        addDrawableChild(new ModelWidget(x, y, width, height, renderable, scale, 35.0F, 1.0, false, false));
-    }
-
-    private void addPokemonModel(Species species, Set<String> aspects, int x, int y, int width, int height) {
-        addPokemonModel(species, aspects, x, y, width, height, 0.8F);
+        addDrawableChild(createModelWidget(x, y, width, height, renderable,
+                scale, 35.0F, 1.0, false, false));
     }
 
     private void addPokemonModel(Species species, Set<String> aspects, int x, int y,
                                  int width, int height, float scale) {
         RenderablePokemon renderable = new RenderablePokemon(species, aspects, ItemStack.EMPTY);
-        addDrawableChild(new ModelWidget(x, y, width, height, renderable, scale, 35.0F, 1.0, false, false));
+        addDrawableChild(createModelWidget(x, y, width, height, renderable,
+                scale, 35.0F, 1.0, false, false));
+    }
+
+    private static ModelWidget createModelWidget(int x, int y, int width, int height,
+                                                 RenderablePokemon pokemon, float scale,
+                                                 float rotation, double offset,
+                                                 boolean playCry, boolean followCursor) {
+        try {
+            for (var constructor : ModelWidget.class.getConstructors()) {
+                if (constructor.getParameterCount() == 11) {
+                    return (ModelWidget) constructor.newInstance(x, y, width, height, pokemon,
+                            scale, rotation, offset, playCry, followCursor, 15);
+                }
+                if (constructor.getParameterCount() == 10) {
+                    ModelWidget widget = (ModelWidget) constructor.newInstance(
+                            x, y, width, height, pokemon, scale, rotation, offset, playCry, followCursor);
+                    try {
+                        ModelWidget.Companion.getClass().getMethod("setRender", boolean.class)
+                                .invoke(ModelWidget.Companion, true);
+                    } catch (NoSuchMethodException ignored) {
+                        // Cobblemon 1.8 renders each widget independently.
+                    }
+                    return widget;
+                }
+            }
+        } catch (ReflectiveOperationException exception) {
+            throw new IllegalStateException("API ModelWidget Cobblemon non compatible", exception);
+        }
+        throw new IllegalStateException("Constructeur ModelWidget Cobblemon non reconnu");
     }
 
     private RenderablePokemon placeholderRenderable() {
@@ -2451,10 +2712,13 @@ public final class TeamManagerScreen extends Screen {
             widget.visible = index < filteredPokemonChoices.size();
             if (!widget.visible) continue;
             PokemonChoice choice = filteredPokemonChoices.get(index);
-            RenderablePokemon renderable = choice.pokemon != null
-                    ? new RenderablePokemon(choice.pokemon.getSpecies(), choice.pokemon.getAspects(), ItemStack.EMPTY)
-                    : new RenderablePokemon(choice.species, formAspects(choice.form), ItemStack.EMPTY);
-            widget.setPokemon(renderable);
+            RenderIdentity identity = choice.pokemon != null
+                    ? new RenderIdentity(choice.pokemon.getSpecies(), Set.copyOf(choice.pokemon.getAspects()), ClientDataRevision.catalogue())
+                    : new RenderIdentity(choice.species, Set.copyOf(formAspects(choice.form)), ClientDataRevision.catalogue());
+            if (!identity.equals(pickerModelIdentities.get(widget))) {
+                widget.setPokemon(new RenderablePokemon(identity.species, identity.aspects, ItemStack.EMPTY));
+                pickerModelIdentities.put(widget, identity);
+            }
         }
     }
 
@@ -2644,7 +2908,58 @@ public final class TeamManagerScreen extends Screen {
 
         if (creating) renderDraftCardOverlay(context, left, top, mouseX, mouseY);
         else if (!data.teams.isEmpty()) renderBrowserCardOverlay(context, selectedTeam(), left, top, mouseX, mouseY);
-        renderHoverTooltip(context, mouseX, mouseY);
+        if (draftDragging) renderDraftSlotDrag(context);
+        else if (previewDragging) renderPreviewSlotDrag(context);
+        else if (teamDrag.team != null) renderTeamDrag(context);
+        else renderHoverTooltip(context, mouseX, mouseY);
+    }
+
+    private void renderDraftSlotDrag(DrawContext context) {
+        if (draggedDraftSlot < 0 || draggedDraftSlot >= draft.size()) return;
+        renderSlotDrag(context, displayName(draft.get(draggedDraftSlot)), draftDragX, draftDragY,
+                cardIndexAt(draftDragX, draftDragY));
+    }
+
+    private void renderPreviewSlotDrag(DrawContext context) {
+        if (data.teams.isEmpty() || draggedPreviewSlot < 0
+                || draggedPreviewSlot >= selectedTeam().slots.size()) return;
+        SavedSlot slot = selectedTeam().slots.get(draggedPreviewSlot);
+        renderSlotDrag(context, savedSlotName(slot, findPokemon(slot.pokemonId)), previewDragX, previewDragY,
+                previewCardIndexAt(previewDragX, previewDragY));
+    }
+
+    private void renderSlotDrag(DrawContext context, String name, double mouseX, double mouseY, int target) {
+        context.getMatrices().push();
+        context.getMatrices().translate(0, 0, 500);
+        if (target >= 0) {
+            int x = cardX(left() + CARD_START_X, target);
+            int y = cardY(top() + CARD_START_Y, target);
+            drawOutline(context, x, y, CARD_WIDTH, CARD_HEIGHT, 0xFF9CE8F2);
+        }
+        int width = 92;
+        int x = Math.max(0, Math.min(this.width - width, (int) mouseX + 10));
+        int y = Math.max(0, Math.min(this.height - 16, (int) mouseY - 8));
+        PcStyleButton.drawFrame(context, x, y, width, 16, PcStyleButton.Style.SELECTED, false, true);
+        context.drawTextWithShadow(textRenderer, Text.literal(fitText(name, width - 8)), x + 4, y + 4,
+                0xFFFFFFFF);
+        context.getMatrices().pop();
+    }
+
+    private void renderTeamDrag(DrawContext context) {
+        if (!teamDrag.dragging) return;
+        int boundary = teamDropBoundary(teamDrag.x, teamDrag.y);
+        context.getMatrices().push();
+        context.getMatrices().translate(0, 0, 500);
+        if (boundary >= 0) {
+            int y = top() + LIST_START_Y + (boundary - page * PAGE_SIZE) * LIST_ROW_HEIGHT - 2;
+            context.fill(left() + LIST_X, y, left() + LIST_X + LEFT_CONTROL_WIDTH, y + 2, 0xFF9CE8F2);
+        }
+        int x = Math.max(0, Math.min(width - LEFT_CONTROL_WIDTH, (int) teamDrag.x + 10));
+        int y = Math.max(0, Math.min(height - 16, (int) teamDrag.y - 8));
+        PcStyleButton.drawFrame(context, x, y, LEFT_CONTROL_WIDTH, 16, PcStyleButton.Style.SELECTED, false, true);
+        context.drawTextWithShadow(textRenderer, Text.literal(fitText(teamDrag.team.name, LEFT_CONTROL_WIDTH - 8)),
+                x + 4, y + 4, 0xFFFFFFFF);
+        context.getMatrices().pop();
     }
 
     private void openTeamDoctor() {
@@ -2942,7 +3257,7 @@ public final class TeamManagerScreen extends Screen {
         context.drawCenteredTextWithShadow(textRenderer, ui("team_doctor_title"),
                 panelX + panelWidth / 2, panelY + 6, 0xFFFFFFFF);
 
-        List<TeamDoctor.Finding> findings = TeamDoctor.analyze(teamDoctorMembers(), rankedBuildStyle);
+        List<TeamDoctor.Finding> findings = doctorFindings;
         int rowY = panelY + 28;
         for (int index = 0; index < Math.min(9, findings.size()); index++) {
             TeamDoctor.Finding finding = findings.get(index);
@@ -3555,14 +3870,14 @@ public final class TeamManagerScreen extends Screen {
                 left + SIDEBAR_CENTER_X, top + 222, 0xFFA7D6E2);
 
         SavedTeam team = selectedTeam();
-        TeamAnalysis analysis = analysis(team);
+        TeamAnalysis analysis = browserAnalysis;
         context.drawCenteredTextWithShadow(textRenderer, Text.literal(trim(team.name, 30)),
                 left + SCREEN_CENTER_X, top + 29, 0xFFFFFF);
         for (int i = 0; i < TeamModels.MAX_TEAM_SIZE; i++) {
             drawBrowserCardBase(context, team, i, left, top, mouseX, mouseY);
         }
         if (status.isBlank()) {
-            drawStatusMessage(context, Text.literal(analysisSummary(analysis)), left, top,
+            drawStatusMessage(context, Text.literal(browserSummary), left, top,
                     analysis.validation.readyToEquip()
                             ? analysis.itemDifferences > 0 ? COLOR_ITEM : COLOR_OK : COLOR_MISSING);
         }
@@ -3685,8 +4000,8 @@ public final class TeamManagerScreen extends Screen {
                 context.drawTextWrapped(textRenderer, Text.literal(evSummary(slot.evs)),
                         left + PARTY_X + 9, top + 80, 64, 0xFF72C9EA);
             }
-            context.drawTextWrapped(textRenderer, ui("replace_required"),
-                    left + PARTY_X + 9, top + 106, 64, COLOR_MISSING);
+            drawMarqueeText(context, ui("replace_required"),
+                    left + PARTY_X + 9, top + 131, 64, COLOR_MISSING);
             return;
         }
         int center = left + PARTY_X + 41;
@@ -3870,7 +4185,7 @@ public final class TeamManagerScreen extends Screen {
                     }
                     lines.add(ui("ranked_reason_style", reason.style));
                 }
-                lines.add(ui("tooltip_reorder"));
+                lines.add(ui("tooltip_slot_controls"));
                 context.drawTooltip(textRenderer, lines, Optional.empty(), mouseX, mouseY);
             }
             return;
@@ -3892,6 +4207,7 @@ public final class TeamManagerScreen extends Screen {
             lines.add(ui("tooltip_current", heldItemName(pokemon)));
             lines.add(Text.literal(stateText(state)));
             lines.add(ui("tooltip_action", actionLabel(current, slot, pokemon, state)));
+            lines.add(ui("tooltip_preview_controls"));
             context.drawTooltip(textRenderer, lines, Optional.empty(), mouseX, mouseY);
         }
     }
@@ -3968,6 +4284,10 @@ public final class TeamManagerScreen extends Screen {
 
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        if (teamDrag.team != null) {
+            if (button == 1) cancelTeamDrag();
+            return true;
+        }
         if (pokemonPickerOpen) return handlePokemonPickerClick(mouseX, mouseY, button);
         if (movePickerOpen) return handleMovePickerClick(mouseX, mouseY, button);
         if (itemPickerOpen) return handleItemPickerClick(mouseX, mouseY, button);
@@ -3977,6 +4297,15 @@ public final class TeamManagerScreen extends Screen {
             return true;
         }
         if (ClientTeamApplier.isActive(this)) return super.mouseClicked(mouseX, mouseY, button);
+        if (!creating && reorderingTeams && button == 0) {
+            int index = teamListIndexAt(mouseX, mouseY);
+            if (index >= 0) {
+                selectTeam(index);
+                teamDrag.begin(data.teams.get(index), mouseX, mouseY);
+                teamDragEdgeTicks = 0;
+                return true;
+            }
+        }
         if (!creating && button == 0 && !data.teams.isEmpty()) {
             int preview = previewCardIndexAt(mouseX, mouseY);
             if (preview >= 0 && preview < selectedTeam().slots.size()) {
@@ -3987,7 +4316,19 @@ public final class TeamManagerScreen extends Screen {
                     openItemPicker(preview);
                     return true;
                 }
-                selectedPreviewSlot = selectedPreviewSlot == preview ? -1 : preview;
+                draggedPreviewSlot = preview;
+                previewPressX = previewDragX = mouseX;
+                previewPressY = previewDragY = mouseY;
+                previewDragging = false;
+                return true;
+            }
+        }
+        if (creating && button == 1) {
+            int index = cardIndexAt(mouseX, mouseY);
+            if (index >= 0 && index < draft.size()) {
+                selectedDraftSlot = selectedDraftSlot == index ? -1 : index;
+                status = selectedDraftSlot < 0 ? uiText("status_deselected") : uiText("status_selected", index + 1);
+                statusError = false;
                 clearAndInit();
                 return true;
             }
@@ -4015,6 +4356,9 @@ public final class TeamManagerScreen extends Screen {
                         return true;
                     }
                     draggedDraftSlot = index;
+                    draftPressX = draftDragX = mouseX;
+                    draftPressY = draftDragY = mouseY;
+                    draftDragging = false;
                 }
                 else if (draft.size() < TeamModels.MAX_TEAM_SIZE) openPicker(-1);
                 return true;
@@ -4265,6 +4609,17 @@ public final class TeamManagerScreen extends Screen {
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
+        if (teamDrag.team != null) {
+            if (!ClientTeamApplier.isActive(this)) {
+                int direction = teamDrag.scrollPage(verticalAmount);
+                if (direction != 0) {
+                    teamDrag.update(mouseX, mouseY);
+                    changeTeamDragPage(direction);
+                    teamDragEdgeTicks = 0;
+                }
+            }
+            return true;
+        }
         if (pokemonPickerOpen) {
             if (pendingAbilityPokemon != null) return true;
             if (verticalAmount < 0 && pokemonPickerPage + 1 < pokemonPickerPages()) {
@@ -4288,7 +4643,8 @@ public final class TeamManagerScreen extends Screen {
             return true;
         }
         if (!creating && !data.teams.isEmpty()
-                && isInside(mouseX, mouseY, left() + LIST_X, top() + 36, 78, 148)) {
+                && isInside(mouseX, mouseY, left() + LIST_X, top() + LIST_START_Y,
+                LEFT_CONTROL_WIDTH, PAGE_SIZE * LIST_ROW_HEIGHT)) {
             if (ClientTeamApplier.isActive(this)) return true;
             if (verticalAmount < 0) changePage(1);
             else if (verticalAmount > 0) changePage(-1);
@@ -4300,6 +4656,8 @@ public final class TeamManagerScreen extends Screen {
     @Override
     public void tick() {
         super.tick();
+        tickTeamDrag();
+        refreshReadModels();
         if (!setEditorOpen || heldEvStat == null || heldEvDirection == 0) {
             if (!setEditorOpen) stopEvAdjustment();
             return;
@@ -4312,6 +4670,10 @@ public final class TeamManagerScreen extends Screen {
 
     @Override
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        if (teamDrag.team != null) {
+            if (keyCode == 256) cancelTeamDrag();
+            return true;
+        }
         if (pokemonPickerOpen && pendingAbilityPokemon != null && keyCode == 256) {
             if (abilityEditSlot >= 0) {
                 closePokemonPicker(false);
@@ -4341,6 +4703,10 @@ public final class TeamManagerScreen extends Screen {
         }
         if (teamDoctorOpen && keyCode == 256) {
             closeTeamDoctor();
+            return true;
+        }
+        if (!creating && reorderingTeams && keyCode == 256) {
+            toggleTeamReordering();
             return true;
         }
         return super.keyPressed(keyCode, scanCode, modifiers);
@@ -4388,12 +4754,18 @@ public final class TeamManagerScreen extends Screen {
 
         if (itemChoices.size() > 2) {
             CompetitiveItemRanker.Profile profile = selectedItemProfile();
+            Map<String, Integer> scores = new LinkedHashMap<>();
+            Map<String, String> names = new LinkedHashMap<>();
+            for (ItemChoice choice : itemChoices) {
+                scores.put(choice.itemId, CompetitiveItemRanker.score(choice.itemId, profile));
+                names.put(choice.itemId, choice.stack.getName().getString());
+            }
             itemChoices.subList(1, itemChoices.size()).sort(
-                    Comparator.comparingInt((ItemChoice choice) ->
-                                    CompetitiveItemRanker.score(choice.itemId, profile)).reversed()
+                    Comparator.comparingInt((ItemChoice choice) -> scores.get(choice.itemId)).reversed()
                             .thenComparing(Comparator.comparingInt((ItemChoice choice) -> choice.count).reversed())
-                            .thenComparing(choice -> choice.stack.getName().getString(), String.CASE_INSENSITIVE_ORDER));
+                            .thenComparing(choice -> names.get(choice.itemId), String.CASE_INSENSITIVE_ORDER));
         }
+        itemPickerInventory = Map.copyOf(inventoryItemCounts());
     }
 
     private CompetitiveItemRanker.Profile selectedItemProfile() {
@@ -4493,27 +4865,95 @@ public final class TeamManagerScreen extends Screen {
     }
 
     @Override
+    public boolean mouseDragged(double mouseX, double mouseY, int button, double deltaX, double deltaY) {
+        if (teamDrag.team != null && button == 0) {
+            teamDrag.update(mouseX, mouseY);
+            return true;
+        }
+        if (creating && draggedDraftSlot >= 0 && button == 0) {
+            draftDragX = mouseX;
+            draftDragY = mouseY;
+            double x = mouseX - draftPressX;
+            double y = mouseY - draftPressY;
+            if (x * x + y * y >= SLOT_DRAG_THRESHOLD_SQUARED) draftDragging = true;
+            return true;
+        }
+        if (!creating && draggedPreviewSlot >= 0 && button == 0) {
+            previewDragX = mouseX;
+            previewDragY = mouseY;
+            double x = mouseX - previewPressX;
+            double y = mouseY - previewPressY;
+            if (x * x + y * y >= SLOT_DRAG_THRESHOLD_SQUARED) previewDragging = true;
+            return true;
+        }
+        return super.mouseDragged(mouseX, mouseY, button, deltaX, deltaY);
+    }
+
+    @Override
     public boolean mouseReleased(double mouseX, double mouseY, int button) {
+        if (teamDrag.team != null && button == 0) {
+            int from = findTeamIndex(teamDrag.team.id);
+            int boundary = teamDrag.dragging ? teamDropBoundary(mouseX, mouseY) : -1;
+            int to = TeamListDrag.targetIndex(from, boundary, data.teams.size());
+            cancelTeamDrag();
+            if (to >= 0 && to != from) moveTeamTo(from, to);
+            return true;
+        }
         if (button == 0 && heldEvStat != null) {
             stopEvAdjustment();
+            return true;
+        }
+        if (!creating && button == 0 && draggedPreviewSlot >= 0) {
+            int source = draggedPreviewSlot;
+            int target = previewCardIndexAt(mouseX, mouseY);
+            boolean dragged = previewDragging;
+            draggedPreviewSlot = -1;
+            previewDragging = false;
+            if (dragged) {
+                lastPreviewClickSlot = -1;
+                if (target >= 0 && target < selectedTeam().slots.size() && target != source) {
+                    swapSavedSlots(source, target);
+                }
+                return true;
+            }
+            if (target == source) {
+                long now = System.currentTimeMillis();
+                boolean doubleClick = lastPreviewClickSlot == source && now - lastPreviewClickTime <= DOUBLE_CLICK_MS;
+                lastPreviewClickSlot = source;
+                lastPreviewClickTime = now;
+                if (doubleClick) {
+                    lastPreviewClickSlot = -1;
+                    quickReplaceFromBrowser(source);
+                } else {
+                    selectedPreviewSlot = selectedPreviewSlot == source ? -1 : source;
+                    clearAndInit();
+                }
+            }
             return true;
         }
         if (creating && button == 0 && draggedDraftSlot >= 0) {
             int source = draggedDraftSlot;
             int target = cardIndexAt(mouseX, mouseY);
+            boolean dragged = draftDragging;
             draggedDraftSlot = -1;
+            draftDragging = false;
             if (target >= 0 && target < draft.size()) {
-                if (target != source) {
+                if (dragged && target != source) {
                     Collections.swap(draft, source, target);
                     swapRankedLocks(source, target);
                     selectedDraftSlot = target;
                     status = uiText("status_order", source + 1, target + 1);
+                    statusError = false;
+                    clearAndInit();
+                } else if (!dragged && target == source) {
+                    selectedDraftSlot = source;
+                    replaceOrAssociate(source);
                 } else {
-                    selectedDraftSlot = selectedDraftSlot == target ? -1 : target;
-                    status = selectedDraftSlot < 0 ? uiText("status_deselected") : uiText("status_selected", target + 1);
+                    selectedDraftSlot = source;
+                    status = uiText("status_selected", source + 1);
+                    statusError = false;
+                    clearAndInit();
                 }
-                statusError = false;
-                clearAndInit();
             }
             return true;
         }
@@ -4539,6 +4979,96 @@ public final class TeamManagerScreen extends Screen {
             }
         }
         return new TeamAnalysis(changes, itemDifferences, moveDifferences, validate(team));
+    }
+
+    /** Presentation caches only. saveDraft/applyTeam still call the original live preflight. */
+    private TeamReadKey readKey(SavedTeam team) {
+        return TeamReadKey.capture(team, ClientDataRevision.storage(), ClientDataRevision.pokemon(),
+                ClientDataRevision.catalogue(), inventoryItemCounts());
+    }
+
+    private TeamAnalysis cachedBrowserAnalysis(SavedTeam team) {
+        TeamAnalysis next = browserAnalysisCache.get(readKey(team), () -> analysis(team));
+        if (browserAnalysis != next || !browserSummaryLanguage.equals(language())) {
+            browserAnalysis = next;
+            browserSummary = analysisSummary(next);
+            browserSummaryLanguage = language();
+            if (equipButton != null) equipButton.setTooltip(Tooltip.of(Text.literal(browserSummary)));
+        }
+        return browserAnalysis;
+    }
+
+    private TeamValidationService.Report cachedDraftValidation() {
+        SavedTeam team = draftAsTeam();
+        return draftValidationCache.get(readKey(team), () -> validate(team));
+    }
+
+    private void refreshDoctor() {
+        // Members depend on planned sets and display names, NOT on render time or animations.
+        TeamDoctorCache.Input key = new TeamDoctorCache.Input(draft.stream().map(slot -> new TeamReadKey.Slot(
+                slot.pokemonId, slot.speciesId, slot.formId, slot.itemId, slot.abilityId, slot.natureId,
+                slot.moveIds, slot.evs)).toList(), draft.stream().map(this::displayName).toList(),
+                ClientDataRevision.catalogue(), language());
+        doctorFindings = teamDoctorCache.analyze(key, rankedBuildStyle, this::teamDoctorMembers);
+    }
+
+    private String language() {
+        return client == null ? "" : client.options.language;
+    }
+
+    private void refreshReadModels() {
+        boolean storageChanged = ownedPokemon.refreshIfChanged(parent);
+        if (storageChanged) {
+            for (int i = 0; i < draft.size(); i++) {
+                DraftSlot slot = draft.get(i);
+                Pokemon current = findPokemon(slot.pokemonId);
+                if (slot.pokemon != current) draft.set(i, new DraftSlot(current, slot.pokemonId, slot.speciesId,
+                        slot.formId, slot.itemId, slot.abilityId, slot.moveIds, slot.natureId, slot.evs, slot.source));
+            }
+        }
+        long pokemonRevision = ClientDataRevision.pokemon();
+        long catalogueRevision = ClientDataRevision.catalogue();
+        String currentLanguage = language();
+        boolean catalogueChanged = observedCatalogueRevision != catalogueRevision;
+        boolean languageChanged = !observedLanguage.equals(currentLanguage);
+        boolean pickerChanged = storageChanged || observedPokemonRevision != pokemonRevision
+                || catalogueChanged || languageChanged;
+        observedPokemonRevision = pokemonRevision;
+        observedCatalogueRevision = catalogueRevision;
+        observedLanguage = currentLanguage;
+        if (catalogueChanged) {
+            rankedTemplateCache = null;
+            rankedProfileCache = null;
+        }
+        pickerRefreshPending |= pickerChanged;
+        if (pickerRefreshPending && pokemonPickerOpen && pendingAbilityPokemon == null) {
+            scanPokemonChoices();
+            refreshPokemonPickerModels();
+            pickerRefreshPending = false;
+        }
+        if (pickerChanged && movePickerOpen && movePickerSlot >= 0 && movePickerSlot < draft.size()) {
+            scanMoveChoices(draft.get(movePickerSlot));
+            movePickerPage = Math.min(movePickerPage, movePickerPages() - 1);
+        }
+        if (itemPickerOpen && (catalogueChanged || languageChanged || !itemPickerInventory.equals(inventoryItemCounts()))) {
+            scanAvailableItems();
+            itemPickerPage = Math.min(itemPickerPage, Math.max(0, (itemChoices.size() - 1) / ITEM_PICKER_PAGE_SIZE));
+        }
+        if (teamDoctorOpen) refreshDoctor();
+        if (!creating && !data.teams.isEmpty()) {
+            TeamAnalysis value = cachedBrowserAnalysis(selectedTeam());
+            if (equipButton != null) {
+                equipButton.active = ClientTeamApplier.isActive(this) || value.validation.readyToEquip();
+            }
+        } else if (creating && saveButton != null) {
+            TeamValidationService.Report value = cachedDraftValidation();
+            saveButton.active = !draft.isEmpty() && value.readyToSave();
+            if (displayedDraftValidation != value || !draftSummaryLanguage.equals(currentLanguage)) {
+                saveButton.setTooltip(Tooltip.of(Text.literal(validationSummary(value))));
+                displayedDraftValidation = value;
+                draftSummaryLanguage = currentLanguage;
+            }
+        }
     }
 
     private String analysisSummary(TeamAnalysis analysis) {
@@ -4702,6 +5232,10 @@ public final class TeamManagerScreen extends Screen {
 
     private Text abilitySummary(PokemonChoice choice) {
         if (choice == null || choice.abilities.isEmpty()) return ui("ability_unspecified");
+        return pickerAbilities.computeIfAbsent(choice, this::buildAbilitySummary);
+    }
+
+    private Text buildAbilitySummary(PokemonChoice choice) {
         var summary = Text.empty();
         for (int i = 0; i < choice.abilities.size(); i++) {
             if (i > 0) summary.append(Text.literal(" / ").styled(style -> style.withColor(0x07566A)));
@@ -4809,6 +5343,10 @@ public final class TeamManagerScreen extends Screen {
     }
 
     private String pokemonChoiceCompactDetail(PokemonChoice choice) {
+        return pickerDetails.computeIfAbsent(choice, this::buildPokemonChoiceCompactDetail);
+    }
+
+    private String buildPokemonChoiceCompactDetail(PokemonChoice choice) {
         if (choice.pokemon == null) {
             RankedUsageService.UsageEntry usage = rankedUsage.get(rankedKey(choice));
             if (usage != null) return uiText("pokemon_picker_ranked_usage",
@@ -5018,6 +5556,7 @@ public final class TeamManagerScreen extends Screen {
 
     @Override
     public void close() {
+        teamDrag.clear();
         if (ClientTeamApplier.isActive(this)) {
             continueApplyInBackground();
             return;
@@ -5026,6 +5565,21 @@ public final class TeamManagerScreen extends Screen {
         rankedUsageRequest++;
         if (rankedUsageFuture != null) rankedUsageFuture.cancel(true);
         openBoxes();
+    }
+
+    @Override
+    public void resize(MinecraftClient client, int width, int height) {
+        if (teamDrag.team != null) page = selectedTeam / PAGE_SIZE;
+        teamDrag.clear();
+        teamDragEdgeTicks = 0;
+        super.resize(client, width, height);
+    }
+
+    @Override
+    public void removed() {
+        teamDrag.clear();
+        teamDragEdgeTicks = 0;
+        super.removed();
     }
 
     @Override
@@ -5046,12 +5600,17 @@ public final class TeamManagerScreen extends Screen {
     private record DraftSlot(Pokemon pokemon, String pokemonId, String speciesId, String formId,
                              String itemId, String abilityId, List<String> moveIds,
                              String natureId, Map<String, Integer> evs, String source) {
+        DraftSlot {
+            moveIds = moveIds == null ? List.of() : List.copyOf(moveIds);
+            evs = evs == null ? Map.of() : Collections.unmodifiableMap(new LinkedHashMap<>(evs));
+        }
     }
-
     private record PokemonChoice(Pokemon pokemon, Species species, FormData form,
                                  StorePosition position, String source,
                                  boolean owned, List<AbilityChoice> abilities) {
     }
+
+    private record RenderIdentity(Species species, Set<String> aspects, long catalogue) { }
 
     private record RankedLocalTemplate(Species species, FormData form) {
     }

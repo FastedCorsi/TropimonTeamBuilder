@@ -1,0 +1,60 @@
+Yanmega @ Choice Specs  
+Ability: Tinted Lens  
+Tera Type: Bug  
+EVs: 4 Def / 252 SpA / 252 Spe  
+Timid Nature  
+- Bug Buzz  
+- Air Slash  
+- Quick Attack  
+- U-turn  
+
+Donphan @ Assault Vest  
+Ability: Sturdy  
+Tera Type: Ground  
+EVs: 204 HP / 252 Atk / 52 Spe  
+Adamant Nature  
+- Earthquake  
+- Knock Off  
+- Fire Fang  
+- Rapid Spin  
+
+Dragapult @ Choice Scarf  
+Ability: Clear Body  
+Tera Type: Dragon  
+EVs: 252 Atk / 4 SpA / 252 Spe  
+Hasty Nature  
+- Dragon Darts  
+- Phantom Force  
+- Hex  
+- U-turn  
+
+Glimmora @ Focus Sash  
+Ability: Toxic Debris  
+Tera Type: Ghost  
+EVs: 124 Def / 132 SpA / 252 Spe  
+Timid Nature  
+- Stealth Rock  
+- Mortal Spin  
+- Power Gem  
+- Sludge Wave  
+
+Samurott-Hisui @ Black Glasses  
+Ability: Sharpness  
+Tera Type: Water  
+EVs: 252 Atk / 4 SpD / 252 Spe  
+Jolly Nature  
+- Ceaseless Edge  
+- Razor Shell  
+- Sucker Punch  
+- Swords Dance  
+
+Gholdengo @ Covert Cloak  
+Ability: Good as Gold  
+Tera Type: Steel  
+EVs: 252 SpA / 4 SpD / 252 Spe  
+Timid Nature  
+IVs: 0 Atk  
+- Nasty Plot  
+- Recover  
+- Shadow Ball  
+- Make It Rain

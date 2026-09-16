@@ -2,10 +2,23 @@ package fr.tropimon.teamsaver.client;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
 final class TeamMoveReconcilerTest {
+    @Test
+    void fallbackAtEquipTimeDoesNotRewriteTheSavedPreset() {
+        List<String> saved = new ArrayList<>(List.of("suckerpunch"));
+
+        TeamMoveReconciler.Result result = TeamMoveReconciler.reconcile(
+                saved, List.of("flipturn"), List.of("flipturn"), 1);
+
+        assertEquals(List.of("flipturn"), result.selected());
+        assertEquals(List.of("suckerpunch"), result.missing());
+        assertEquals(List.of("suckerpunch"), saved);
+    }
+
     @Test
     void keepsOwnedPresetMovesAndFillsWithCurrentMoves() {
         TeamMoveReconciler.Result result = TeamMoveReconciler.reconcile(

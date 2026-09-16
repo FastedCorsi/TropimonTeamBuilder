@@ -4,7 +4,7 @@
   "version": "${version}",
   "name": "Tropimon Team Builder",
   "description": "Client-side Cobblemon team builder and manager integrated into the PC interface.",
-  "authors": ["Julien"],
+  "authors": ["By FastedCorsi"],
   "license": "All-Rights-Reserved",
   "environment": "client",
   "entrypoints": {
@@ -17,9 +17,9 @@
     }
   ],
   "depends": {
-    "fabricloader": ">=0.16.0",
+    "fabricloader": ">=0.17.2",
     "minecraft": "1.21.1",
-    "fabric-api": "*",
-    "cobblemon": ">=1.7.2 <1.8.0"
+    "fabric-api": ">=0.116.6+1.21.1",
+    "cobblemon": ">=1.7.2"
   }
 }

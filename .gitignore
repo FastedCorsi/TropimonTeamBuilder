@@ -7,3 +7,16 @@ out/
 *.log
 hs_err_pid*
 *.jar.pending
+
+# Local/private material is never part of the distribution.
+**/.env
+**/.env.*
+**/logs/
+**/crash-reports/
+**/screenshots/
+**/saves/
+/config/
+/sessions/
+/private/
+/buildSrc/.gradle/
+/buildSrc/build/
