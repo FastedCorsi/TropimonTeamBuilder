@@ -137,9 +137,22 @@ final class RankedUsageService {
         Map<String, CandidateProfile> profiles = normalizeProfiles(candidateProfiles);
         BuildStyle selectedStyle = style == null ? BuildStyle.BALANCED : style;
         GenerationMode selectedMode = generationMode == null ? GenerationMode.MIXED : generationMode;
-        return supplyCancellable(
-                () -> recommendBlocking(existing, profiles, maximumSize, requestedSeason, variation,
-                        selectedStyle, selectedMode)).orTimeout(15, TimeUnit.SECONDS);
+        CompletableFuture<Recommendation> result = new CompletableFuture<>();
+        // Give the player time to read the download disclosure; do not consume the request timeout.
+        ShowdownGen9SetService.INSTANCE.ensureLoaded().thenRun(() -> {
+            if (result.isDone()) return;
+            CompletableFuture<Recommendation> calculation = supplyCancellable(
+                    () -> recommendBlocking(existing, profiles, maximumSize, requestedSeason, variation,
+                            selectedStyle, selectedMode)).orTimeout(15, TimeUnit.SECONDS);
+            calculation.whenComplete((recommendation, error) -> {
+                if (error == null) result.complete(recommendation);
+                else result.completeExceptionally(error);
+            });
+            result.whenComplete((ignored, error) -> {
+                if (result.isCancelled()) calculation.cancel(true);
+            });
+        });
+        return result;
     }
 
     private <T> CompletableFuture<T> supplyCancellable(Supplier<T> supplier) {

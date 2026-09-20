@@ -1,3 +1,5 @@
+import java.util.zip.ZipFile
+import groovy.json.JsonSlurper
 import java.security.MessageDigest
 
 plugins {
@@ -16,17 +18,45 @@ repositories {
     maven("https://api.modrinth.com/maven")
 }
 
-val launcherMods = file("${System.getProperty("user.home")}/AppData/Roaming/.tropimon/mods")
-val localCobblemon = providers.gradleProperty("cobblemonJar").orNull?.let(::file) ?: run {
-    val installed = launcherMods.listFiles()
-        ?.filter { it.isFile && it.name.matches(Regex("Cobblemon-fabric-.+\\.jar", RegexOption.IGNORE_CASE)) }
+val launcherHome = providers.environmentVariable("TROPIMON_HOME").orNull?.let(::file)
+    ?: providers.environmentVariable("APPDATA").orNull?.let { file(it).resolve(".tropimon") }
+    ?: file(System.getProperty("user.home")).resolve(".tropimon")
+val officialDependenciesOnly = providers.gradleProperty("officialDependenciesOnly").isPresent
+val launcherInstance = providers.gradleProperty("launcherInstance").orNull?.let(::file) ?: run {
+    val profiles = launcherHome.resolve("profiles")
+    if (profiles.isDirectory) {
+        val instances = profiles.listFiles().orEmpty().map { it.resolve("instance") }
+            .filter { it.resolve("mods").isDirectory }
+        if (instances.size != 1) throw GradleException("Profil ambigu : définir -PlauncherInstance=<instance>.")
+        instances.single()
+    } else launcherHome
+}
+val localMods = launcherInstance.resolve("mods")
+val cobblemonJar = if (officialDependenciesOnly) null else providers.gradleProperty("cobblemonJar").orNull?.let(::file) ?: run {
+    val installed = localMods.listFiles()
+        ?.filter { it.isFile && it.extension.equals("jar", ignoreCase = true) }
+        ?.filter { jar ->
+            ZipFile(jar).use { zip ->
+                zip.getEntry("fabric.mod.json")?.let { entry ->
+                    zip.getInputStream(entry).use { input ->
+                        (JsonSlurper().parse(input) as? Map<*, *>)?.get("id") == "cobblemon"
+                    }
+                } ?: false
+            }
+        }
         .orEmpty()
+    if (localMods.isDirectory && installed.size != 1) {
+        throw GradleException("Le profil doit contenir un unique JAR Cobblemon ; définir -PcobblemonJar=<jar> si nécessaire.")
+    }
     installed.singleOrNull()
 }
-val localKotlinCandidates = fileTree(launcherMods) {
-    include("fabric-language-kotlin-*.jar")
-}.files
-val officialDependenciesOnly = providers.gradleProperty("officialDependenciesOnly").isPresent
+if (cobblemonJar != null && !cobblemonJar.isFile) {
+    throw GradleException("JAR Cobblemon introuvable : définir un -PcobblemonJar valide.")
+}
+
+val launcherMods = localMods
+val localCobblemon = cobblemonJar
+val localKotlinCandidates = fileTree(launcherMods) { include("fabric-language-kotlin-*.jar") }.files
 
 dependencies {
     minecraft("com.mojang:minecraft:${property("minecraft_version")}")
@@ -168,6 +198,8 @@ val prepareReleaseDelivery = tasks.register("prepareReleaseDelivery") {
         copyAndHash(localDirectory.resolve("TropimonTeamBuilder-${project.version}+1.21.1-LOCAL.jar"))
         file("tools/install-local-deferred.ps1")
             .copyTo(localDirectory.resolve("install-local-deferred.ps1"), overwrite = true)
+        file("tools/InstallManagedLocalMod.ps1")
+            .copyTo(localDirectory.resolve("InstallManagedLocalMod.ps1"), overwrite = true)
     }
 }
 

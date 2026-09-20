@@ -45,11 +45,29 @@ final class PasteImportScreen extends Screen {
 
     private void importPaste() {
         if (pending != null && !pending.isDone()) return;
+        String value = input.getText().strip();
+        if (value.startsWith("https://") || value.startsWith("http://")) {
+            try {
+                String source = PokePasteService.rawUri(value).toString();
+                boolean french = client.options.language.startsWith("fr");
+                client.setScreen(new net.minecraft.client.gui.screen.ConfirmScreen(accepted -> {
+                    client.setScreen(this);
+                    if (accepted) importApprovedPaste(value);
+                }, Text.literal(french ? "Télécharger ce Poképaste ?" : "Download this Poképaste?"),
+                        Text.literal((french ? "Le texte de l'équipe sera téléchargé depuis " : "Team text will be downloaded from ") + source),
+                        Text.literal(french ? "Télécharger" : "Download"), Text.literal(french ? "Annuler" : "Cancel")));
+            } catch (IllegalArgumentException exception) { showError(exception); }
+            return;
+        }
+        importApprovedPaste(value);
+    }
+
+    private void importApprovedPaste(String value) {
         int token = ++request;
         message = tr("paste_loading");
         error = false;
         try {
-            pending = PokePasteService.load(input.getText());
+            pending = PokePasteService.load(value);
             pending.whenComplete((parsed, failure) -> client.execute(() -> {
                 if (token != request || client.currentScreen != this) return;
                 if (failure != null) { showError(failure); return; }

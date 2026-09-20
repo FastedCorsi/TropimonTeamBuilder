@@ -33,34 +33,59 @@ final class ShowdownGen9SetService {
 
     private final HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
     private Map<String, List<CompetitiveSet>> sets = Map.of();
-    private boolean loaded;
+    private CompletableFuture<Void> readiness;
 
     private ShowdownGen9SetService() {
     }
 
-    synchronized void ensureLoaded() {
-        if (loaded) return;
+    synchronized CompletableFuture<Void> ensureLoaded() {
+        if (readiness != null) return readiness;
+        readiness = new CompletableFuture<>();
         CacheFile disk = readDisk();
         if (disk != null && disk.schemaVersion != CACHE_SCHEMA) disk = null;
         long now = System.currentTimeMillis();
         if (disk != null && disk.sets != null && now - disk.savedAt <= FRESH_MS) {
             sets = immutable(disk.sets);
-            loaded = true;
-            return;
-        }
-        try {
-            Map<String, List<CompetitiveSet>> online = fetchAll();
-            if (!online.isEmpty()) {
-                sets = immutable(online);
-                loaded = true;
-                writeDisk(new CacheFile(CACHE_SCHEMA, now, sets));
-                return;
-            }
-        } catch (RuntimeException exception) {
-            TropimonTeamSaverClient.LOGGER.warn("Catalogue Pokémon Showdown Gen 9 indisponible", exception);
+            readiness.complete(null);
+            return readiness;
         }
         if (disk != null && disk.sets != null && now - disk.savedAt <= STALE_MS) sets = immutable(disk.sets);
-        loaded = true;
+        // Reading an existing local cache needs no network access. Refreshing its eight files does.
+        var client = net.minecraft.client.MinecraftClient.getInstance();
+        client.execute(() -> {
+            var parent = client.currentScreen;
+            boolean french = client.options.language.startsWith("fr");
+            var decided = new java.util.concurrent.atomic.AtomicBoolean();
+            java.util.function.Consumer<Boolean> answer = accepted -> {
+                if (!decided.compareAndSet(false, true)) return;
+                client.setScreen(parent);
+                if (accepted) CompletableFuture.runAsync(this::downloadConsentedCatalogue)
+                        .whenComplete((ignored, failure) -> readiness.complete(null));
+                else readiness.complete(null);
+            };
+            client.setScreen(new net.minecraft.client.gui.screen.ConfirmScreen(answer::accept,
+                    net.minecraft.text.Text.literal(french ? "Télécharger les sets Showdown ?" : "Download Showdown sets?"),
+                    net.minecraft.text.Text.literal(french
+                            ? "Télécharger huit catalogues JSON Gen 9 depuis play.pokemonshowdown.com et les garder dans le cache local pendant 24 heures ? Un refus conserve les données locales disponibles."
+                            : "Download eight Gen 9 JSON catalogues from play.pokemonshowdown.com and cache them locally for 24 hours? Declining keeps available local data."),
+                    net.minecraft.text.Text.literal(french ? "Télécharger" : "Download"),
+                    net.minecraft.text.Text.literal(french ? "Annuler" : "Cancel")) {
+                @Override public void close() { answer.accept(false); }
+            });
+        });
+        return readiness;
+    }
+
+    private void downloadConsentedCatalogue() {
+        try {
+            Map<String, List<CompetitiveSet>> online = fetchAll();
+            if (!online.isEmpty()) synchronized (this) {
+                sets = immutable(online);
+                writeDisk(new CacheFile(CACHE_SCHEMA, System.currentTimeMillis(), sets));
+            }
+        } catch (RuntimeException exception) {
+            TropimonTeamSaverClient.LOGGER.warn("Catalogue Pokémon Showdown Gen 9 indisponible ({})", exception.getClass().getSimpleName());
+        }
     }
 
     CompetitiveSet bestSet(String showdownId, RankedUsageService.BuildStyle style, String archetype) {
