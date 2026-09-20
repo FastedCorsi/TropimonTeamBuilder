@@ -53,7 +53,7 @@ import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
 import net.minecraft.util.Identifier;
 
-public final class TeamManagerScreen extends Screen {
+public final class TeamManagerScreen extends FittedScreen {
     private static final Identifier PC_BASE = Identifier.of("cobblemon", "textures/gui/pc/pc_base.png");
     private static final Identifier SCREEN_OVERLAY = Identifier.of("cobblemon", "textures/gui/pc/pc_screen_overlay.png");
     private static final Identifier TYPE_ICONS = Identifier.of("cobblemon", "textures/gui/types.png");
@@ -263,7 +263,7 @@ public final class TeamManagerScreen extends Screen {
     }
 
     TeamManagerScreen(PCGUI parent, boolean standalone, String autoApplyTeamId) {
-        super(Text.translatable("screen.tropimon_team_saver.title"));
+        super(Text.translatable("screen.tropimon_team_saver.title"), 473, 263);
         this.parent = parent;
         this.standalone = standalone;
         this.autoApplyTeamId = autoApplyTeamId;
@@ -272,7 +272,7 @@ public final class TeamManagerScreen extends Screen {
     }
 
     @Override
-    protected void init() {
+    protected void initContent() {
         ownedPokemon.refreshIfChanged(parent);
         equipButton = null;
         saveButton = null;
@@ -2848,13 +2848,12 @@ public final class TeamManagerScreen extends Screen {
     }
 
     @Override
-    public void render(DrawContext context, int mouseX, int mouseY, float delta) {
-        renderBackground(context, mouseX, mouseY, delta);
+    public void renderContent(DrawContext context, int mouseX, int mouseY, float delta) {
         if (pokemonPickerOpen) {
             int pickerLeft = pickerLeft();
             int pickerTop = pickerTop();
             renderPokemonPickerBase(context, mouseX, mouseY, pickerLeft, pickerTop);
-            super.render(context, mouseX, mouseY, delta);
+            renderWidgets(context, mouseX, mouseY, delta);
             renderPokemonPickerOverlay(context, mouseX, mouseY, pickerLeft, pickerTop);
             return;
         }
@@ -2878,25 +2877,25 @@ public final class TeamManagerScreen extends Screen {
         }
 
         if (movePickerOpen) {
-            super.render(context, mouseX, mouseY, delta);
+            renderWidgets(context, mouseX, mouseY, delta);
             renderMovePicker(context, mouseX, mouseY, left, top);
             return;
         }
 
         if (itemPickerOpen) {
-            super.render(context, mouseX, mouseY, delta);
+            renderWidgets(context, mouseX, mouseY, delta);
             renderItemPicker(context, mouseX, mouseY, left, top);
             return;
         }
 
         if (setEditorOpen) {
             renderSetEditor(context, mouseX, mouseY, left, top);
-            super.render(context, mouseX, mouseY, delta);
+            renderWidgets(context, mouseX, mouseY, delta);
             return;
         }
 
         if (teamDoctorOpen) {
-            super.render(context, mouseX, mouseY, delta);
+            renderWidgets(context, mouseX, mouseY, delta);
             renderTeamDoctor(context, mouseX, mouseY, left, top);
             return;
         }
@@ -2904,7 +2903,7 @@ public final class TeamManagerScreen extends Screen {
         if (creating) renderEditor(context, left, top, mouseX, mouseY);
         else renderBrowser(context, left, top, mouseX, mouseY);
         renderStatus(context, left, top);
-        super.render(context, mouseX, mouseY, delta);
+        renderWidgets(context, mouseX, mouseY, delta);
 
         if (creating) renderDraftCardOverlay(context, left, top, mouseX, mouseY);
         else if (!data.teams.isEmpty()) renderBrowserCardOverlay(context, selectedTeam(), left, top, mouseX, mouseY);
@@ -3059,7 +3058,7 @@ public final class TeamManagerScreen extends Screen {
                                      int x, int y, int width, int height, String label, int textColor) {
         boolean hovered = isInside(mouseX, mouseY, x, y, width, height);
         PcStyleButton.drawFrame(context, x, y, width, height, PcStyleButton.Style.NORMAL, hovered, true);
-        context.enableScissor(x + 3, y + 1, x + width - 3, y + height - 1);
+        scissor(context, x + 3, y + 1, x + width - 3, y + height - 1);
         context.drawCenteredTextWithShadow(textRenderer, Text.literal(fitText(label, width - 8)),
                 x + width / 2, y + Math.max(3, (height - 8) / 2), textColor);
         context.disableScissor();
@@ -3108,7 +3107,7 @@ public final class TeamManagerScreen extends Screen {
             int y = panelY + 45 + index * 16;
             if (isInside(mouseX, mouseY, panelX + 200, y, 40, 14)) {
                 stopEvAdjustment();
-                boolean handled = super.mouseClicked(mouseX, mouseY, button);
+                boolean handled = super.clickContent(mouseX, mouseY, button);
                 TextFieldWidget input = evInputFields.get(stat);
                 if (input != null) {
                     input.setFocused(true);
@@ -3740,13 +3739,13 @@ public final class TeamManagerScreen extends Screen {
                 for (AbilityChoice ability : choice.abilities) lines.add(coloredAbilityName(ability));
             }
             lines.add(ui(pokemon == null ? "pokemon_picker_choose_ability" : "pokemon_picker_select"));
-            context.drawTooltip(textRenderer, lines, Optional.empty(), mouseX, mouseY);
+            queueTooltip(textRenderer, lines, Optional.empty(), mouseX, mouseY);
         } else {
             int hoveredStat = pokemonStatHeaderIndexAt(mouseX, mouseY);
             if (hoveredStat >= 0) {
                 Stat stat = DISPLAY_STATS.get(hoveredStat);
                 boolean descending = stat != pokemonPickerSortStat || pokemonPickerSortDescending;
-                context.drawTooltip(textRenderer, List.of(
+                queueTooltip(textRenderer, List.of(
                         ui(descending ? "pokemon_picker_sort_desc" : "pokemon_picker_sort_asc", statHeader(stat)),
                         ui(pokemonPickerAllSpecies ? "pokemon_picker_stat_base_hint" : "pokemon_picker_stat_iv_hint"),
                         ui("pokemon_picker_sort_hint")), Optional.empty(), mouseX, mouseY);
@@ -4074,7 +4073,7 @@ public final class TeamManagerScreen extends Screen {
         float scale = 0.78F;
         float centerX = left + 40.0F;
         float y = top + 13.0F;
-        context.enableScissor(left + 4, top + 2, left + 78, top + 20);
+        scissor(context, left + 4, top + 2, left + 78, top + 20);
         context.getMatrices().push();
         context.getMatrices().scale(scale, scale, 1.0F);
         context.drawCenteredTextWithShadow(textRenderer, label,
@@ -4137,7 +4136,7 @@ public final class TeamManagerScreen extends Screen {
                 PcStyleButton.Style.NORMAL, false, true);
         context.fill(stripX + 3, stripY + 2, stripX + stripWidth - 3, stripY + 12, 0xE51A2529);
         context.fill(stripX + 3, stripY + 11, stripX + stripWidth - 3, stripY + 12, accent);
-        context.enableScissor(textX, stripY + 1, textX + availableWidth, stripY + 13);
+        scissor(context, textX, stripY + 1, textX + availableWidth, stripY + 13);
         if (textWidth <= availableWidth) {
             context.drawCenteredTextWithShadow(textRenderer, message,
                     textX + availableWidth / 2, textY, 0xFFF0FAFC);
@@ -4156,7 +4155,7 @@ public final class TeamManagerScreen extends Screen {
         if (creating) {
             if ((rankedTeamGenerated || rankedHelperRunning)
                     && isInside(mouseX, mouseY, left() + 6, top() + 137, 70, 27)) {
-                context.drawTooltip(textRenderer, ui("tooltip_ranked_disclaimer"), mouseX, mouseY);
+                queueTooltip(textRenderer, ui("tooltip_ranked_disclaimer"), mouseX, mouseY);
                 return;
             }
             int index = cardIndexAt(mouseX, mouseY);
@@ -4186,7 +4185,7 @@ public final class TeamManagerScreen extends Screen {
                     lines.add(ui("ranked_reason_style", reason.style));
                 }
                 lines.add(ui("tooltip_slot_controls"));
-                context.drawTooltip(textRenderer, lines, Optional.empty(), mouseX, mouseY);
+                queueTooltip(textRenderer, lines, Optional.empty(), mouseX, mouseY);
             }
             return;
         }
@@ -4208,7 +4207,7 @@ public final class TeamManagerScreen extends Screen {
             lines.add(Text.literal(stateText(state)));
             lines.add(ui("tooltip_action", actionLabel(current, slot, pokemon, state)));
             lines.add(ui("tooltip_preview_controls"));
-            context.drawTooltip(textRenderer, lines, Optional.empty(), mouseX, mouseY);
+            queueTooltip(textRenderer, lines, Optional.empty(), mouseX, mouseY);
         }
     }
 
@@ -4278,12 +4277,12 @@ public final class TeamManagerScreen extends Screen {
                 }
                 lines.add(Text.literal("• " + source));
             }
-            context.drawTooltip(textRenderer, lines, Optional.empty(), mouseX, mouseY);
+            queueTooltip(textRenderer, lines, Optional.empty(), mouseX, mouseY);
         }
     }
 
     @Override
-    public boolean mouseClicked(double mouseX, double mouseY, int button) {
+    public boolean clickContent(double mouseX, double mouseY, int button) {
         if (teamDrag.team != null) {
             if (button == 1) cancelTeamDrag();
             return true;
@@ -4296,7 +4295,7 @@ public final class TeamManagerScreen extends Screen {
             if (button == 0) closeTeamDoctor();
             return true;
         }
-        if (ClientTeamApplier.isActive(this)) return super.mouseClicked(mouseX, mouseY, button);
+        if (ClientTeamApplier.isActive(this)) return super.clickContent(mouseX, mouseY, button);
         if (!creating && reorderingTeams && button == 0) {
             int index = teamListIndexAt(mouseX, mouseY);
             if (index >= 0) {
@@ -4364,7 +4363,7 @@ public final class TeamManagerScreen extends Screen {
                 return true;
             }
         }
-        return super.mouseClicked(mouseX, mouseY, button);
+        return super.clickContent(mouseX, mouseY, button);
     }
 
     private boolean handlePokemonPickerClick(double mouseX, double mouseY, int button) {
@@ -4372,7 +4371,7 @@ public final class TeamManagerScreen extends Screen {
         if (pendingAbilityPokemon != null) return handleAbilityPickerClick(mouseX, mouseY);
         if (rankedSeasonMenuOpen) {
             if (isInside(mouseX, mouseY, pickerLeft() + 115, pickerTop() + 27, 86, 17)) {
-                return super.mouseClicked(mouseX, mouseY, button);
+                return super.clickContent(mouseX, mouseY, button);
             }
             int seasonIndex = rankedSeasonIndexAt(mouseX, mouseY);
             if (seasonIndex >= 0) {
@@ -4427,7 +4426,7 @@ public final class TeamManagerScreen extends Screen {
             closePokemonPicker(true);
             return true;
         }
-        return super.mouseClicked(mouseX, mouseY, button);
+        return super.clickContent(mouseX, mouseY, button);
     }
 
     private int rankedSeasonIndexAt(double mouseX, double mouseY) {
@@ -4608,7 +4607,7 @@ public final class TeamManagerScreen extends Screen {
     }
 
     @Override
-    public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
+    public boolean scrollContent(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
         if (teamDrag.team != null) {
             if (!ClientTeamApplier.isActive(this)) {
                 int direction = teamDrag.scrollPage(verticalAmount);
@@ -4650,7 +4649,7 @@ public final class TeamManagerScreen extends Screen {
             else if (verticalAmount > 0) changePage(-1);
             return true;
         }
-        return super.mouseScrolled(mouseX, mouseY, horizontalAmount, verticalAmount);
+        return super.scrollContent(mouseX, mouseY, horizontalAmount, verticalAmount);
     }
 
     @Override
@@ -4865,7 +4864,7 @@ public final class TeamManagerScreen extends Screen {
     }
 
     @Override
-    public boolean mouseDragged(double mouseX, double mouseY, int button, double deltaX, double deltaY) {
+    public boolean dragContent(double mouseX, double mouseY, int button, double deltaX, double deltaY) {
         if (teamDrag.team != null && button == 0) {
             teamDrag.update(mouseX, mouseY);
             return true;
@@ -4886,11 +4885,11 @@ public final class TeamManagerScreen extends Screen {
             if (x * x + y * y >= SLOT_DRAG_THRESHOLD_SQUARED) previewDragging = true;
             return true;
         }
-        return super.mouseDragged(mouseX, mouseY, button, deltaX, deltaY);
+        return super.dragContent(mouseX, mouseY, button, deltaX, deltaY);
     }
 
     @Override
-    public boolean mouseReleased(double mouseX, double mouseY, int button) {
+    public boolean releaseContent(double mouseX, double mouseY, int button) {
         if (teamDrag.team != null && button == 0) {
             int from = findTeamIndex(teamDrag.team.id);
             int boundary = teamDrag.dragging ? teamDropBoundary(mouseX, mouseY) : -1;
@@ -4957,7 +4956,7 @@ public final class TeamManagerScreen extends Screen {
             }
             return true;
         }
-        return super.mouseReleased(mouseX, mouseY, button);
+        return super.releaseContent(mouseX, mouseY, button);
     }
 
     private TeamAnalysis analysis(SavedTeam team) {
@@ -5474,7 +5473,7 @@ public final class TeamManagerScreen extends Screen {
         }
         int offset = (int) Math.round(overflow * progress);
 
-        context.enableScissor(x, y - 1, x + width, y + 10);
+        scissor(context, x, y - 1, x + width, y + 10);
         context.drawText(textRenderer, text, x - offset, y, color, false);
         context.disableScissor();
     }

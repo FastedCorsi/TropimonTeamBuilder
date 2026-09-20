@@ -48,7 +48,7 @@ final class PcStyleButton extends ButtonWidget {
             int offset = (int) (phase <= travel + 18L ? Math.max(0L, phase - 9L) :
                     Math.max(0L, (travel + 18L) * 2L - phase - 9L));
             offset = Math.min(travel, offset);
-            context.enableScissor(getX() + 4, getY() + 1, getX() + width - 4, getY() + height - 1);
+            FittedScreen.scissor(context, getX() + 4, getY() + 1, getX() + width - 4, getY() + height - 1);
             context.drawTextWithShadow(renderer, getMessage(), getX() + 4 - offset, textY, color);
             context.disableScissor();
         } else {

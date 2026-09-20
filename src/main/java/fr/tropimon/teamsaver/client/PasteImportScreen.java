@@ -25,7 +25,9 @@ final class PasteImportScreen extends Screen {
         int w = panelWidth();
         int x = (width - w) / 2;
         int top = 22;
-        input = new EditBoxWidget(textRenderer, x + 10, top + 43, w - 20, Math.max(35, height - 154),
+        int hintBottom = 46 + textRenderer.wrapLines(tr("paste_hint"), w - 20).size() * 9;
+        int inputTop = Math.max(top + 43, hintBottom + 5);
+        input = new EditBoxWidget(textRenderer, x + 10, inputTop, w - 20, Math.max(35, height - 89 - inputTop),
                 tr("paste_hint"), tr("paste_title"));
         input.setMaxLength(ShowdownPaste.MAX_LENGTH);
         input.setText(previous);
@@ -112,7 +114,10 @@ final class PasteImportScreen extends Screen {
         context.drawTextWrapped(textRenderer, tr("paste_hint"), x + 10, 46, w - 20, 0xFFBFEFFF);
         context.drawTextWrapped(textRenderer, message, x + 10, height - 79, w - 20,
                 error ? 0xFFFF6B6B : 0xFFBFEFFF);
-        super.render(context, mouseX, mouseY, delta);
+        for (var child : children()) {
+            if (child instanceof net.minecraft.client.gui.Drawable drawable)
+                drawable.render(context, mouseX, mouseY, delta);
+        }
     }
 
     private int panelWidth() { return Math.min(430, width - 16); }
